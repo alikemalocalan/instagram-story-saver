@@ -28,6 +28,8 @@ libraryDependencies ++= Seq(
   "commons-io" % "commons-io" % "2.6"
 )
 
+mainClass in Compile := Some("com.github.alikemalocalan.instastorysaver.InstaStorySaver")
+
 scalacOptions := Seq("-unchecked", "-deprecation", "-encoding", "utf8")
 
 // To cross compile with Dotty and Scala 2

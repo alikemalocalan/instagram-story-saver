@@ -1,0 +1,41 @@
+{
+  "name": "instagram story saver",
+  "description": "",
+  "repository": "https://github.com/alikemalocalan/instagram-story-saver",
+  "logo": "https://www.herokucdn.com/deploy/button.svg",
+  "keywords": [
+    "scala",
+    "instagram"
+  ],
+  "buildpacks": [
+    {
+      "url": "https://github.com/heroku/heroku-buildpack-scala.git"
+    }
+  ],
+  "env": {
+    "instagram username": {
+      "description": "your instagram username"
+    },
+    "PASSWORD": {
+      "description": "your instagram password"
+    },
+    "BUCKETNAME": {
+      "description": "S3 bucket name",
+      "value": "sample-bucket"
+    },
+    "REGION": {
+      "description": "S3 region",
+      "value": "us-east-1"
+    },
+    "ENPOINT": {
+      "description": "S3 service entpoint",
+      "value": "s3.us-east-1.amazonaws.com"
+    },
+    "AWS_ACCESS_KEY_ID": {
+      "description": "Aws acces key"
+    },
+    "AWS_SECRET_ACCESS_KEY": {
+      "description": "Aws acces key secret"
+    }
+  }
+}

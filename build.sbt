@@ -2,9 +2,9 @@
 name := "instastorysaver"
 version := "0.1.0"
 organization := "com.github.alikemalocalan"
-scalaVersion := "2.13.1"
+scalaVersion := "2.13.3"
 
-val scala213Version = "2.13.1"
+val scala213Version = "2.13.3"
 val AkkaVersion = "2.6.10"
 // To make the default compiler and REPL use Dotty
 //val dottyVersion = "0.27.0-RC1"
@@ -19,12 +19,11 @@ resolvers ++= Seq(
 
 
 libraryDependencies ++= Seq(
-  "com.novocode" % "junit-interface" % "0.11" % "test",
-  "com.github.instagram4j" % "instagram4j" % "develop-370fad2",
   "com.typesafe.akka" %% "akka-actor-typed" % AkkaVersion,
+  "com.typesafe" % "config" % "1.4.1",
   "io.spray" %% "spray-json" % "1.3.5",
+  "com.github.instagram4j" % "instagram4j" % "develop-370fad2",
   "com.amazonaws" % "aws-java-sdk-s3" % "1.11.894",
-  "com.github.pureconfig" %% "pureconfig" % "0.12.1",
   "javax.xml.bind" % "jaxb-api" % "2.3.1",
   "commons-io" % "commons-io" % "2.6"
 )

@@ -2,15 +2,14 @@
 name := "instastorysaver"
 version := "0.1.0"
 organization := "com.github.alikemalocalan"
-scalaVersion := "2.13.3"
+scalaVersion := "2.12.12"
 
-val scala213Version = "2.13.3"
 val AkkaVersion = "2.6.10"
 // To make the default compiler and REPL use Dotty
 //val dottyVersion = "0.27.0-RC1"
 //scalaVersion := dottyVersion
 
-resolvers ++= Seq(
+resolvers in Global ++= Seq(
   "apache-snapshots" at "https://repository.apache.org/snapshots/",
   "Typesafe" at "https://repo.typesafe.com/typesafe/releases/",
   "Sbt plugins" at "https://dl.bintray.com/sbt/sbt-plugin-releases",
@@ -34,3 +33,9 @@ scalacOptions := Seq("-unchecked", "-deprecation", "-encoding", "utf8")
 
 // To cross compile with Dotty and Scala 2
 //crossScalaVersions := Seq(dottyVersion, scala213Version)
+
+val stage = taskKey[Unit]("Stage task")
+
+val Stage = config("stage")
+
+enablePlugins(JavaAppPackaging)

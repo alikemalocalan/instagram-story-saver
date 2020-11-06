@@ -3,8 +3,12 @@ package com.github.alikemalocalan.instastorysaver
 import com.typesafe.config.ConfigFactory
 
 trait Config {
-  val bucketName: String = "instagram-private-stories"
-  val region: String = hostConfig.getString("bucketName")
   private val config = ConfigFactory.load
-  private val hostConfig = config.getConfig("http")
+
+  val userName: String = config.getString("username")
+  val passWord: String = config.getString("password")
+
+  val bucketName: String = config.getString("bucket-name")
+  val region: String = config.getString("region")
+  val s3Endpoint: String = config.getString("s3-endpoint")
 }

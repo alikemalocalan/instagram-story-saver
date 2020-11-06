@@ -3,13 +3,15 @@ package com.github.alikemalocalan.instastorysaver.service
 import java.util.concurrent.CompletableFuture
 
 import com.github.alikemalocalan.instastorysaver.LoginService
-import com.github.alikemalocalan.instastorysaver.model.User
+import com.github.alikemalocalan.instastorysaver.model.{UrlOperation, User}
 import com.github.instagram4j.instagram4j.IGClient
 import com.github.instagram4j.instagram4j.models.media.reel.{ReelImageMedia, ReelVideoMedia}
+import org.apache.commons.logging.{Log, LogFactory}
 
 import scala.collection.convert.ImplicitConversionsToScala._
 
 object InstaService {
+  val logger: Log = LogFactory.getLog(this.getClass)
 
   def getUserStory(userPk: Long)(implicit client: IGClient): CompletableFuture[List[Option[String]]] =
     client.actions().story().userStory(userPk).thenApply { story =>
@@ -27,11 +29,11 @@ object InstaService {
 
   def getFollowingUsers(implicit client: IGClient): CompletableFuture[List[User]] =
     client.getActions.users().findByUsername(getAccountUserName).thenApply { user =>
-      val x = user.followingFeed()
+      val users = user.followingFeed()
         .toList
         .flatMap(_.getUsers.map(user => User(user.getUsername, user.getPk)))
-      x.foreach(println(_))
-      x
+      logger.debug(users.mkString(","))
+      users
     }
 
   def getAccountUserName(implicit client: IGClient): String = {
@@ -40,6 +42,22 @@ object InstaService {
 
   def login(userName: String, password: String): IGClient = {
     LoginService.serializeLogin(userName, password)
+  }
+
+  def saveStoriesToS3(implicit client: IGClient): Unit = {
+    val followingUsers = InstaService.getFollowingUsers
+
+    followingUsers.thenAccept { userList =>
+      userList.foreach { user =>
+        InstaService.getUserStory(user.userId).thenAccept { list =>
+          list.flatten.foreach { url =>
+            val operation = UrlOperation(url, user.username)
+            logger.debug(operation)
+            S3ClientService.uploadUrl(operation)
+          }
+        }
+      }
+    }
   }
 
 }

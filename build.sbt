@@ -23,8 +23,9 @@ libraryDependencies ++= Seq(
   "com.github.instagram4j" % "instagram4j" % "develop-370fad2",
   "com.typesafe.akka" %% "akka-actor-typed" % AkkaVersion,
   "io.spray" %% "spray-json" % "1.3.5",
-  "com.amazonaws" % "aws-java-sdk-s3" % "1.11.714",
+  "com.amazonaws" % "aws-java-sdk-s3" % "1.11.894",
   "com.github.pureconfig" %% "pureconfig" % "0.12.1",
+  "javax.xml.bind" % "jaxb-api" % "2.3.1",
   "commons-io" % "commons-io" % "2.6"
 )
 

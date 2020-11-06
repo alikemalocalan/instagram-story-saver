@@ -3,10 +3,13 @@ package com.github.alikemalocalan.instastorysaver;
 import com.github.instagram4j.instagram4j.IGClient;
 import com.github.instagram4j.instagram4j.utils.IGUtils;
 import okhttp3.OkHttpClient;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 
 import java.io.*;
 
 public class LoginService {
+    public static Log logger = LogFactory.getLog(LoginService.class);
 
     public static IGClient serializeLogin(String username, String password)
             throws ClassNotFoundException,
@@ -14,17 +17,15 @@ public class LoginService {
         File to = new File("/tmp/igclient.ser");
         File cookFile = new File("/tmp/cookie.ser");
         if (to.exists() && cookFile.exists()) {
-            System.out.println("Deserializing. . .");
-            IGClient client = IGClient.from(new FileInputStream(to),
+            logger.info("Deserializing. . .");
+            return IGClient.from(new FileInputStream(to),
                     formTestHttpClient(deserialize(cookFile, SerializableCookieJar.class)));
-            System.out.println(client.toString());
-            return client;
         } else {
             SerializableCookieJar jar = new SerializableCookieJar();
             IGClient client = new IGClient.Builder().username(username).password(password)
                     .client(formTestHttpClient(jar))
                     .login();
-            System.out.println("Serializing. . .");
+            logger.info("Serializing. . .");
             serialize(client, to);
             serialize(jar, cookFile);
             return client;

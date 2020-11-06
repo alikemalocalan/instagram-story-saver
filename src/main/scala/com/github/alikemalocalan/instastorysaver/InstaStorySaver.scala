@@ -1,20 +1,34 @@
 package com.github.alikemalocalan.instastorysaver
 
+import akka.actor.ActorSystem
 import com.github.alikemalocalan.instastorysaver.service.InstaService
 import com.github.instagram4j.instagram4j.IGClient
+import org.apache.commons.logging.{Log, LogFactory}
 
-object InstaStorySaver extends App {
+import scala.concurrent.ExecutionContextExecutor
+import scala.concurrent.duration._
+import scala.util.{Failure, Success, Try}
+
+object InstaStorySaver extends App with Config {
+  implicit val system: ActorSystem = ActorSystem("InstaStorySaver-Actor-System")
+  implicit val executionContext: ExecutionContextExecutor = system.dispatcher
 
   implicit val client: IGClient = InstaService
-    .login("username", "password")
+    .login(userName, passWord)
 
-  val followingUsers = InstaService.getFollowingUsers
+  val logger: Log = LogFactory.getLog(this.getClass)
 
-  followingUsers.thenAccept { userList =>
-    userList.foreach { user =>
-      InstaService.getUserStory(user.userId).thenAccept { list =>
-        list.filter(_.isDefined).foreach(println)
-      }
+  val saverScheduler: Runnable = () => {
+    Try {
+      logger.info("Starting Saving Stories...")
+      InstaService.saveStoriesToS3
+    } match {
+      case Success(_) => logger.info("Finish Success, yuu are the best!!!")
+      case Failure(exception) => logger.error("Feed error on: ", exception)
     }
   }
+
+  system.scheduler.scheduleWithFixedDelay(5.seconds, 24.hour)(
+    saverScheduler
+  )
 }

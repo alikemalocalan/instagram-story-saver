@@ -2,13 +2,12 @@ package com.github.alikemalocalan.instastorysaver.service
 
 import java.util.concurrent.CompletableFuture
 
-import com.github.alikemalocalan.instastorysaver.LoginService
 import com.github.alikemalocalan.instastorysaver.model.{UrlOperation, User}
 import com.github.instagram4j.instagram4j.IGClient
 import com.github.instagram4j.instagram4j.models.media.reel.{ReelImageMedia, ReelVideoMedia}
 import org.apache.commons.logging.{Log, LogFactory}
 
-import scala.collection.convert.ImplicitConversionsToScala._
+import scala.collection.convert.ImplicitConversions.`iterable AsScalaIterable`
 
 object InstaService {
   val logger: Log = LogFactory.getLog(this.getClass)

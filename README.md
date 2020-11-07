@@ -24,3 +24,8 @@ or Deploy Haroku
 
 [![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/alikemalocalan/instagram-story-saver/tree/master)
 
+
+### TODO list
+
+- [x] Save cookie to s3 for logout&restart problem on Heroku
+- [ ] saving to local machine option

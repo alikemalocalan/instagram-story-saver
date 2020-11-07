@@ -13,7 +13,7 @@
     }
   ],
   "env": {
-    "instagram username": {
+    "USERNAME": {
       "description": "your instagram username"
     },
     "PASSWORD": {
@@ -22,6 +22,10 @@
     "BUCKETNAME": {
       "description": "S3 bucket name",
       "value": "sample-bucket"
+    },
+    "SETTINGONS3": {
+      "description": "do you wan to save your cookie to s3 for logout problem?",
+      "value": "false"
     },
     "REGION": {
       "description": "S3 region",

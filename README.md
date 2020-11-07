@@ -1,6 +1,6 @@
 # instagram story saver with Scala
 
-this is scheduler app about storing your or your feeds instagram stories for looking later.
+this is scheduler app about storing your or your feeds instagram stories (as invisible) for looking later.
 
 Default scheduler is 24 hours
 

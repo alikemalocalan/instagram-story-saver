@@ -3,6 +3,7 @@ package com.github.alikemalocalan.instastorysaver.service
 import java.util.concurrent.CompletableFuture
 
 import com.github.alikemalocalan.instastorysaver.model.{UrlOperation, User}
+import com.github.alikemalocalan.instastorysaver.service.S3ClientService.{downloadUrl, uploadUrl}
 import com.github.instagram4j.instagram4j.IGClient
 import com.github.instagram4j.instagram4j.models.media.reel.{ReelImageMedia, ReelVideoMedia}
 import org.apache.commons.logging.{Log, LogFactory}
@@ -52,7 +53,7 @@ object InstaService {
           list.flatten.foreach { url =>
             val operation = UrlOperation(url, user.username)
             logger.debug(operation)
-            S3ClientService.uploadUrl(operation)
+            uploadUrl(downloadUrl(operation.url), operation.filefullPath)
           }
         }
       }

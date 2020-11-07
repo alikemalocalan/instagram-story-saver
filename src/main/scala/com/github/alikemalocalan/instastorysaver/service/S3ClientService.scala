@@ -7,7 +7,6 @@ import com.amazonaws.client.builder.AwsClientBuilder.EndpointConfiguration
 import com.amazonaws.services.s3.model._
 import com.amazonaws.services.s3.{AmazonS3, AmazonS3ClientBuilder}
 import com.github.alikemalocalan.instastorysaver.Config
-import com.github.alikemalocalan.instastorysaver.model.UrlOperation
 import okhttp3.{OkHttpClient, Request}
 import org.apache.commons.io.FileUtils
 import org.apache.commons.logging.{Log, LogFactory}
@@ -25,29 +24,10 @@ object S3ClientService extends Config {
     .withEndpointConfiguration(new EndpointConfiguration(s3Endpoint, region))
     .build()
 
-  def uploadUrl(urlOperation: UrlOperation): Unit = {
+  def uploadUrl(file: File, destination: String): Unit = {
     Try {
-      val request = new Request.Builder()
-        .url(urlOperation.url)
-        .build()
-
-      val response = client.newCall(request).execute().body()
-
-      val inputStream = response.byteStream()
-      println(urlOperation.filefullPath)
-
-      val metadata = new ObjectMetadata()
-      //metadata.setContentType("image/jpeg")
-      metadata.setContentLength(response.contentLength())
-      //metadata.setHeader("x-amz-acl","'authenticated-read'")
-
-
-      val file = File.createTempFile("prefix", ".tmp")
-      FileUtils.copyInputStreamToFile(inputStream, file)
-
       // Upload a file as a new object with ContentType and title specified.
-      val s3request = new PutObjectRequest(bucketName, urlOperation.filefullPath, file)
-      val result = s3Client.putObject(s3request)
+      val result = s3Client.putObject(bucketName, destination, file)
       file.deleteOnExit()
       result
     } match {
@@ -56,6 +36,27 @@ object S3ClientService extends Config {
       case Failure(e) =>
         logger.error(e)
     }
+  }
+
+  def getS3file(filePath: String, destinationPath: String): File = {
+    val file = new File(destinationPath)
+    s3Client.getObject(new GetObjectRequest(bucketName, filePath), file)
+    file
+  }
+
+  def existS3file(filePath: String): Boolean =
+    s3Client.doesObjectExist(bucketName, filePath)
+
+  def downloadUrl(url: String): File = {
+    val request = new Request.Builder()
+      .url(url)
+      .build()
+
+    val responseInputStream = client.newCall(request).execute().body().byteStream()
+
+    val file = File.createTempFile("prefix", ".tmp")
+    FileUtils.copyInputStreamToFile(responseInputStream, file)
+    file
   }
 
 }

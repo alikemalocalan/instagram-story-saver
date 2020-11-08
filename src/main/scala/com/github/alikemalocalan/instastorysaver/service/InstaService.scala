@@ -52,7 +52,7 @@ object InstaService {
         InstaService.getUserStory(user.userId).thenAccept { list =>
           list.flatten.foreach { url =>
             val operation = UrlOperation(url, user.username)
-            logger.debug(operation)
+            logger.info(operation)
             uploadUrl(downloadUrl(operation.url), operation.filefullPath)
           }
         }

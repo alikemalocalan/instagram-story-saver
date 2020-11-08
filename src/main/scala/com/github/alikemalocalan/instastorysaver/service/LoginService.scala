@@ -2,6 +2,7 @@ package com.github.alikemalocalan.instastorysaver.service
 
 import java.io._
 
+import com.github.alikemalocalan.instastorysaver.Utils.{deserialize, serialize}
 import com.github.alikemalocalan.instastorysaver.service.S3ClientService._
 import com.github.alikemalocalan.instastorysaver.{Config, SerializableCookieJar}
 import com.github.instagram4j.instagram4j.IGClient
@@ -13,17 +14,12 @@ object LoginService extends Config {
   val logger: Log = LogFactory.getLog(this.getClass)
 
   def serializeLogin(username: String, password: String): IGClient = {
-    val (clientFile: File, cookieFile: File) = {
-      val (clientFile, cookieFile) = (new File(clientSettingTMPPath), new File(cookieSettingTMPPath))
-      if (doesSettingOnS3 & existS3file(clientS3SettingPath) & existS3file(cookieS3SettingPath)) {
-        (getS3file(clientS3SettingPath, clientSettingTMPPath), getS3file(cookieS3SettingPath, cookieSettingTMPPath))
-      } else (clientFile, cookieFile)
-    }
+    val (clientFile: File, cookieFile: File) = getSavingClientSettingFiles
 
     if (clientFile.exists() && cookieFile.exists()) {
       logger.info("Deserializing. . .")
       IGClient.from(new FileInputStream(clientFile),
-        formTestHttpClient(deserialize(cookieFile, classOf[SerializableCookieJar])))
+        formTestHttpClient(deserialize[SerializableCookieJar](cookieFile)))
     } else {
 
       val jar = new SerializableCookieJar()
@@ -33,7 +29,7 @@ object LoginService extends Config {
       logger.info("Serializing. . .")
       serialize(client, clientFile)
       serialize(jar, cookieFile)
-      if (doesSettingOnS3) {
+      if (enableS3Backup) {
         uploadUrl(clientFile, clientS3SettingPath)
         uploadUrl(cookieFile, cookieS3SettingPath)
       }
@@ -42,24 +38,19 @@ object LoginService extends Config {
 
   }
 
-  def serialize(o: Any, to: File): Unit = {
-    val file = new FileOutputStream(to)
-    val out = new ObjectOutputStream(file)
-    out.writeObject(o)
-    out.close()
-    file.close()
-  }
-
-  def deserialize[T](file: File, clazz: Class[T]): T = {
-    val in = new FileInputStream(file)
-    val oIn = new ObjectInputStream(in)
-    val t = clazz.cast(oIn.readObject)
-    in.close()
-    oIn.close()
-    t
-  }
-
   def formTestHttpClient(jar: SerializableCookieJar): OkHttpClient =
     IGUtils.defaultHttpClientBuilder.cookieJar(jar).build
+
+  private def getSavingClientSettingFiles: (File, File) = {
+    val (clientFile: File, cookieFile: File) = {
+      val (clientFile, cookieFile) = (new File(clientSettingTMPPath), new File(cookieSettingTMPPath))
+      if (enableS3Backup) {
+        if (existS3file(clientS3SettingPath) & existS3file(cookieS3SettingPath))
+          (getS3file(clientS3SettingPath, clientSettingTMPPath), getS3file(cookieS3SettingPath, cookieSettingTMPPath))
+        else (clientFile, cookieFile)
+      } else (clientFile, cookieFile)
+    }
+    (clientFile, cookieFile)
+  }
 
 }

@@ -28,4 +28,4 @@ or Deploy Haroku
 ### TODO list
 
 - [x] Save cookie to s3 for logout&restart problem on Heroku
-- [ ] saving to local machine option
+- [x] saving to local machine option

@@ -26,5 +26,5 @@ object InstaStorySaver extends App with Config {
         case Failure(exception) => logger.error("Feed error on: ", exception)
       }
   }
-  timer.scheduleAtFixedRate(saverScheduler, 3.seconds.toMillis, 10.seconds.toMillis)
+  timer.scheduleAtFixedRate(saverScheduler, 3.seconds.toMillis, 24.hours.toMillis)
 }

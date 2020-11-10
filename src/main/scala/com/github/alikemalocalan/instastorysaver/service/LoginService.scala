@@ -1,22 +1,17 @@
 package com.github.alikemalocalan.instastorysaver.service
 
 import java.io._
-import java.util.concurrent.{LinkedBlockingQueue, ThreadPoolExecutor, TimeUnit}
 
 import com.github.alikemalocalan.instastorysaver.Utils.{deserialize, serialize}
 import com.github.alikemalocalan.instastorysaver.service.S3ClientService._
 import com.github.alikemalocalan.instastorysaver.{Config, SerializableCookieJar}
 import com.github.instagram4j.instagram4j.IGClient
 import com.github.instagram4j.instagram4j.utils.IGUtils
-import okhttp3.{Dispatcher, OkHttpClient}
-import okhttp3.internal.Util
+import okhttp3.OkHttpClient
 import org.apache.commons.logging.{Log, LogFactory}
 
 object LoginService extends Config {
   val logger: Log = LogFactory.getLog(this.getClass)
-  val executorService: ThreadPoolExecutor = new ThreadPoolExecutor(10, 100, 60, TimeUnit.SECONDS,
-    new LinkedBlockingQueue[Runnable](), Util.threadFactory("OkHttp Dispatcher", false))
-  val dispatcher = new Dispatcher(executorService)
 
   def serializeLogin(username: String, password: String): IGClient = {
     val (clientFile: File, cookieFile: File) = getSavingClientSettingFiles
@@ -44,7 +39,7 @@ object LoginService extends Config {
   }
 
   def formTestHttpClient(jar: SerializableCookieJar): OkHttpClient =
-    IGUtils.defaultHttpClientBuilder.dispatcher(dispatcher).cookieJar(jar).build
+    IGUtils.defaultHttpClientBuilder.cookieJar(jar).build
 
   private def getSavingClientSettingFiles: (File, File) = {
     val (clientFile: File, cookieFile: File) = {

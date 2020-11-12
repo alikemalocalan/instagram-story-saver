@@ -1,40 +1,43 @@
 package com.github.alikemalocalan.instastorysaver.service
 
-import java.util.concurrent.CompletableFuture
-
 import com.github.alikemalocalan.instastorysaver.model.{UrlOperation, User}
 import com.github.alikemalocalan.instastorysaver.service.S3ClientService.{downloadUrl, uploadUrl}
 import com.github.instagram4j.instagram4j.IGClient
 import com.github.instagram4j.instagram4j.models.media.reel.{ReelImageMedia, ReelVideoMedia}
 import org.apache.commons.logging.{Log, LogFactory}
 
-import scala.collection.convert.ImplicitConversions.`iterable AsScalaIterable`
+import scala.collection.convert.ImplicitConversions._
+
+case class UserStories(username: String, storyUrls: Seq[String])
 
 object InstaService {
   val logger: Log = LogFactory.getLog(this.getClass)
 
-  def getUserStory(userPk: Long)(implicit client: IGClient): CompletableFuture[List[Option[String]]] =
-    client.actions().story().userStory(userPk).thenApply { story =>
-      if (story.getReel != null)
-        story.getReel.getItems.toList.map {
+  def getUserStory(user: User)(implicit client: IGClient): UserStories = {
+    val userStory = client.actions().story().userStory(user.userId).get()
+    val stories =
+      if (userStory.getReel != null)
+        userStory.getReel.getItems.flatMap {
           case video: ReelVideoMedia =>
             Some(video.getVideo_versions.maxBy(_.getHeight).getUrl)
           case photo: ReelImageMedia =>
             Some(photo.getImage_versions2.getCandidates.maxBy(_.getHeight).getUrl)
           case _ => None
         }
-      else
-        List()
-    }
+      else List()
+    UserStories(user.username, stories)
 
-  def getFollowingUsers(implicit client: IGClient): CompletableFuture[List[User]] =
-    client.getActions.users().findByUsername(getAccountUserName).thenApply { user =>
-      val users = user.followingFeed()
-        .toList
-        .flatMap(_.getUsers.map(user => User(user.getUsername, user.getPk)))
-      logger.debug(users.mkString(","))
-      users
-    }
+  }
+
+  def getFollowingUsers(implicit client: IGClient): Stream[User] = {
+    val user = client.getActions.users().findByUsername(getAccountUserName).get
+    user.followingFeed()
+      .toStream
+      .flatMap(user => user.getUsers.map { user =>
+        logger.info(user.getUsername)
+        User(user.getUsername, user.getPk)
+      })
+  }
 
   def getAccountUserName(implicit client: IGClient): String = {
     client.getSelfProfile.getUsername
@@ -44,20 +47,23 @@ object InstaService {
     LoginService.serializeLogin(userName, password)
   }
 
-  def saveStoriesToS3(implicit client: IGClient): Unit = {
-    val followingUsers = InstaService.getFollowingUsers
+  def getStoriesAllFollowing(implicit client: IGClient): Stream[UserStories] = {
+    InstaService
+      .getFollowingUsers
+      .map(user => InstaService.getUserStory(user))
+  }
 
-    followingUsers.thenAccept { userList =>
-      userList.foreach { user =>
-        InstaService.getUserStory(user.userId).thenAccept { list =>
-          list.flatten.foreach { url =>
-            val operation = UrlOperation(url, user.username)
-            logger.info(operation)
-            uploadUrl(downloadUrl(operation.url), operation.filefullPath)
-          }
+  def saveStoriesToS3(implicit client: IGClient): Unit = {
+    getStoriesAllFollowing
+      .filter(_.storyUrls.nonEmpty)
+      .foreach { user =>
+        logger.info(user)
+        user.storyUrls.foreach { url =>
+          val operation = UrlOperation(url, user.username)
+          logger.info(operation)
+          uploadUrl(downloadUrl(operation.url), operation.filefullPath)
         }
       }
-    }
   }
 
 }

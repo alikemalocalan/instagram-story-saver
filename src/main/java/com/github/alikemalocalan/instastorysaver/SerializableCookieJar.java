@@ -3,6 +3,7 @@ package com.github.alikemalocalan.instastorysaver;
 import okhttp3.Cookie;
 import okhttp3.CookieJar;
 import okhttp3.HttpUrl;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
 import java.io.ObjectInputStream;
@@ -20,6 +21,7 @@ public class SerializableCookieJar implements CookieJar, Serializable {
 
     Map<String, List<SerializableCookie>> map = new HashMap<>();
 
+    @NotNull
     @Override
     public List<Cookie> loadForRequest(HttpUrl arg0) {
         return map.getOrDefault(arg0.host(), new ArrayList<>()).stream()

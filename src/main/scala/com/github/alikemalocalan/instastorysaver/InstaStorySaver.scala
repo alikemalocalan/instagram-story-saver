@@ -16,15 +16,26 @@ object InstaStorySaver extends App with Config {
   implicit val client: IGClient = InstaService
     .login(userName, passWord)
 
-  val saverScheduler: TimerTask = new TimerTask {
+  val storyScheduler: TimerTask = new TimerTask {
     def run(): Unit =
       Try {
         logger.info("Starting Saving Stories...")
         InstaService.saveStoriesToS3
       } match {
-        case Success(_) => logger.info("Finish Success, yuu are the best!!!")
+        case Success(_) => logger.info("Finish Success Story, yuu are the best!!!")
+        case Failure(exception) => logger.error("Story error on: ", exception)
+      }
+  }
+  val feedScheduler: TimerTask = new TimerTask {
+    def run(): Unit =
+      Try {
+        logger.info("Starting Saving Feeds...")
+        InstaService.saveFeedsToS3
+      } match {
+        case Success(_) => logger.info("Finish Success Feed, yuu are the best!!!")
         case Failure(exception) => logger.error("Feed error on: ", exception)
       }
   }
-  timer.scheduleAtFixedRate(saverScheduler, 3.seconds.toMillis, 24.hours.toMillis)
+  timer.scheduleAtFixedRate(storyScheduler, 3.seconds.toMillis, 24.hours.toMillis)
+  timer.scheduleAtFixedRate(feedScheduler, 15.minutes.toMillis, 168.hours.toMillis)
 }

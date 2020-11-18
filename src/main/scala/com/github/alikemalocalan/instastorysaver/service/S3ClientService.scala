@@ -52,13 +52,17 @@ object S3ClientService extends Config {
       .url(url)
       .build()
 
-    val file = File.createTempFile("prefix", ".tmp")
+    var file: File = null
 
-    Try(client.newCall(request).execute().body().byteStream()) match {
-      case Success(inputStream) =>
-        FileUtils.copyInputStreamToFile(inputStream, file)
+    Try {
+      file = File.createTempFile("prefix", ".tmp")
+      val inputStream = client.newCall(request).execute().body().byteStream()
+      FileUtils.copyInputStreamToFile(inputStream, file)
+    } match {
+      case Success(_) => logger.debug("Finish Download")
       case Failure(_) => if (reTryCount > 0) {
         logger.info(s"Retrying $reTryCount. download file: $url ")
+        Try(file.delete())
         downloadUrl(url, reTryCount - 1)
       }
       else logger.error(s"I cant download this url: $url")

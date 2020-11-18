@@ -59,13 +59,14 @@ object InstaService {
     }
 
   def getFollowingUsers(implicit client: IGClient): Stream[User] = {
-    val user = client.getActions.users().findByUsername(getAccountUserName).get
-    user.followingFeed()
-      .toStream
-      .flatMap(user => user.getUsers.map { user =>
-        logger.info(user.getUsername)
-        User(user.getUsername, user.getPk)
-      })
+    client.getActions.users().findByUsername(getAccountUserName).thenApply[Stream[User]] { user =>
+      user.followingFeed()
+        .toStream
+        .flatMap(user => user.getUsers.map { user =>
+          logger.info(user.getUsername)
+          User(user.getUsername, user.getPk)
+        })
+    }.join()
   }
 
   def getAccountUserName(implicit client: IGClient): String = {
@@ -87,12 +88,14 @@ object InstaService {
 
     def uploadS3(users: Stream[UserStories]): Unit = {
       users.foreach { userStories =>
+        logger.info(userStories)
         userStories.storyUrls
           .foreach { storyUrl =>
-            logger.info(userStories)
             val operation = UrlOperation(storyUrl, userStories.user.username, "stories")
             logger.info(operation)
-            uploadUrl(downloadUrl(operation.url), operation.filefullPath)
+            val file = downloadUrl(operation.url)
+            uploadUrl(file, operation.filefullPath)
+            file.delete()
           }
       }
     }
@@ -115,7 +118,9 @@ object InstaService {
         userFeedMedias.medias.foreach { feedMedia =>
           val operation = UrlOperation(feedMedia.url, userFeedMedias.user.username, "feeds")
           logger.info(operation)
-          uploadUrl(downloadUrl(operation.url), operation.filefullPath)
+          val file = downloadUrl(operation.url)
+          uploadUrl(file, operation.filefullPath)
+          file.delete()
         }
       }
     }

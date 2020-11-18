@@ -32,7 +32,7 @@ object S3ClientService extends Config {
       result
     } match {
       case Success(result) =>
-        logger.info(result.toString)
+        logger.info(result.getContentMd5)
       case Failure(e) =>
         logger.error(e)
     }
@@ -47,15 +47,23 @@ object S3ClientService extends Config {
   def existS3file(filePath: String): Boolean =
     s3Client.doesObjectExist(bucketName, filePath)
 
-  def downloadUrl(url: String): File = {
+  def downloadUrl(url: String, reTryCount: Int = 3): File = {
     val request = new Request.Builder()
       .url(url)
       .build()
 
-    val responseInputStream = client.newCall(request).execute().body().byteStream()
-
     val file = File.createTempFile("prefix", ".tmp")
-    FileUtils.copyInputStreamToFile(responseInputStream, file)
+
+    Try(client.newCall(request).execute().body().byteStream()) match {
+      case Success(inputStream) =>
+        FileUtils.copyInputStreamToFile(inputStream, file)
+      case Failure(_) => if (reTryCount > 0) {
+        logger.info(s"Retrying $reTryCount. download file: $url ")
+        downloadUrl(url, reTryCount - 1)
+      }
+      else logger.error(s"I cant download this url: $url")
+    }
+
     file
   }
 

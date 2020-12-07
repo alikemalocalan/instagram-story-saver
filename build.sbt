@@ -1,6 +1,6 @@
 
 name := "instastorysaver"
-version := "0.2.0"
+version := "0.1.3"
 organization := "com.github.alikemalocalan"
 scalaVersion := "2.12.12"
 
@@ -11,7 +11,7 @@ resolvers in Global ++= Seq(
 )
 
 libraryDependencies ++= Seq(
-  "com.github.instagram4j" % "instagram4j" % "develop-370fad2",
+  "com.github.instagram4j" % "instagram4j" % "2.0.0",
   "com.amazonaws" % "aws-java-sdk-s3" % "1.11.894",
   "com.typesafe" % "config" % "1.4.1",
   "javax.xml.bind" % "jaxb-api" % "2.3.1",

@@ -1,15 +1,16 @@
 package com.github.alikemalocalan.instastorysaver.service
 
-import java.util.concurrent.CompletableFuture
-
 import com.github.alikemalocalan.instastorysaver.model.{UrlOperation, User}
 import com.github.alikemalocalan.instastorysaver.service.S3ClientService.{downloadUrl, uploadUrl}
 import com.github.instagram4j.instagram4j.IGClient
 import com.github.instagram4j.instagram4j.models.media.reel.{ReelImageMedia, ReelVideoMedia}
 import com.github.instagram4j.instagram4j.models.media.timeline._
-import com.github.instagram4j.instagram4j.requests.feed.FeedUserRequest
+import com.github.instagram4j.instagram4j.requests.feed.{FeedUserRequest, FeedUserStoryRequest}
+import org.apache.commons.io.FileUtils
 import org.apache.commons.logging.{Log, LogFactory}
 
+import java.io.File
+import java.util.concurrent.CompletableFuture
 import scala.collection.convert.ImplicitConversions._
 import scala.concurrent.duration.DurationInt
 
@@ -23,7 +24,7 @@ object InstaService {
   val logger: Log = LogFactory.getLog(this.getClass)
 
   def getUserStory(user: User)(implicit client: IGClient): CompletableFuture[UserStories] =
-    client.actions().story().userStory(user.userId).thenApply[UserStories](userStory => {
+    new FeedUserStoryRequest(user.userId).execute(client).thenApply[UserStories](userStory => {
       val stories = if (userStory.getReel != null)
         userStory.getReel.getItems.flatMap {
           case video: ReelVideoMedia =>
@@ -83,7 +84,7 @@ object InstaService {
   def getFeedsAllFollowing(users: Stream[User])(implicit client: IGClient): Stream[UserFeedMedias] =
     users.map(user => InstaService.getUserFeed(user).join())
 
-  def saveStoriesToS3(implicit client: IGClient): Unit = {
+  def saveStories(enableS3: Boolean, defaultFolder: Option[String] = None)(implicit client: IGClient): Unit = {
     val users: Stream[UserStories] = getStoriesAllFollowing(InstaService.getFollowingUsers)
 
     def uploadS3(users: Stream[UserStories]): Unit = {
@@ -94,7 +95,9 @@ object InstaService {
             val operation = UrlOperation(storyUrl, userStories.user.username, "stories")
             logger.info(operation)
             val file = downloadUrl(operation.url)
-            uploadUrl(file, operation.filefullPath)
+            if (enableS3) {
+              uploadUrl(file, operation.filefullPath)
+            } else FileUtils.moveFile(file, new File(s"${defaultFolder.get}/${operation.filefullPath}"))
             file.delete()
           }
       }
@@ -109,7 +112,7 @@ object InstaService {
   }
 
 
-  def saveFeedsToS3(implicit client: IGClient): Unit = {
+  def saveFeeds(enableS3: Boolean, defaultFolder: Option[String] = None)(implicit client: IGClient): Unit = {
     val users = getFeedsAllFollowing(InstaService.getFollowingUsers)
 
     def uploadS3(users: Stream[UserFeedMedias]): Unit = {
@@ -119,7 +122,9 @@ object InstaService {
           val operation = UrlOperation(feedMedia.url, userFeedMedias.user.username, "feeds")
           logger.info(operation)
           val file = downloadUrl(operation.url)
-          uploadUrl(file, operation.filefullPath)
+          if (enableS3) {
+            uploadUrl(file, operation.filefullPath)
+          } else FileUtils.moveFile(file, new File(s"${defaultFolder.get}/${operation.filefullPath}"))
           file.delete()
         }
       }

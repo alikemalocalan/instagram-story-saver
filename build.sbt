@@ -15,10 +15,11 @@ libraryDependencies ++= Seq(
   "com.amazonaws" % "aws-java-sdk-s3" % "1.11.894",
   "com.typesafe" % "config" % "1.4.1",
   "javax.xml.bind" % "jaxb-api" % "2.3.1",
-  "commons-io" % "commons-io" % "2.8.0"
+  "commons-io" % "commons-io" % "2.8.0",
+  "org.rogach" %% "scallop" % "3.5.1"
 )
 
-mainClass in Compile := Some("com.github.alikemalocalan.instastorysaver.InstaStorySaver")
+mainClass in Compile := Some("com.github.alikemalocalan.instastorysaver.StorySaverScheduler")
 
 scalacOptions := Seq("-unchecked", "-deprecation", "-encoding", "utf8")
 
@@ -27,3 +28,12 @@ val stage = taskKey[Unit]("Stage task")
 val Stage = config("stage")
 
 enablePlugins(JavaAppPackaging)
+
+assemblyJarName in assembly := s"${name.value}.jar"
+
+assemblyMergeStrategy in assembly := {
+  case "module-info.class" => MergeStrategy.last
+  case other => MergeStrategy.defaultMergeStrategy(other)
+}
+
+mainClass in assembly := Some("com.github.alikemalocalan.instastorysaver.StorySaverCLI")

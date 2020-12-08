@@ -1,7 +1,5 @@
 package com.github.alikemalocalan.instastorysaver.service
 
-import java.io._
-
 import com.github.alikemalocalan.instastorysaver.Utils.{deserialize, serialize}
 import com.github.alikemalocalan.instastorysaver.service.S3ClientService._
 import com.github.alikemalocalan.instastorysaver.{Config, SerializableCookieJar}
@@ -9,6 +7,8 @@ import com.github.instagram4j.instagram4j.IGClient
 import com.github.instagram4j.instagram4j.utils.IGUtils
 import okhttp3.OkHttpClient
 import org.apache.commons.logging.{Log, LogFactory}
+
+import java.io._
 
 object LoginService extends Config {
   val logger: Log = LogFactory.getLog(this.getClass)
@@ -41,16 +41,9 @@ object LoginService extends Config {
   def formTestHttpClient(jar: SerializableCookieJar): OkHttpClient =
     IGUtils.defaultHttpClientBuilder.cookieJar(jar).build
 
-  private def getSavingClientSettingFiles: (File, File) = {
-    val (clientFile: File, cookieFile: File) = {
-      val (clientFile, cookieFile) = (new File(clientSettingTMPPath), new File(cookieSettingTMPPath))
-      if (enableS3Backup) {
-        if (existS3file(clientS3SettingPath) & existS3file(cookieS3SettingPath))
-          (getS3file(clientS3SettingPath, clientSettingTMPPath), getS3file(cookieS3SettingPath, cookieSettingTMPPath))
-        else (clientFile, cookieFile)
-      } else (clientFile, cookieFile)
-    }
-    (clientFile, cookieFile)
-  }
+  private def getSavingClientSettingFiles: (File, File) =
+    if (enableS3Backup && existS3file(clientS3SettingPath) && existS3file(cookieS3SettingPath))
+      (getS3file(clientS3SettingPath, clientSettingTMPPath), getS3file(cookieS3SettingPath, cookieSettingTMPPath))
+    else (new File(clientSettingTMPPath), new File(cookieSettingTMPPath))
 
 }

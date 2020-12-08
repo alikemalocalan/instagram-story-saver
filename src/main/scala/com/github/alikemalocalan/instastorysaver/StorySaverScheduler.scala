@@ -1,15 +1,14 @@
 package com.github.alikemalocalan.instastorysaver
 
-import java.util.{Timer, TimerTask}
-
 import com.github.alikemalocalan.instastorysaver.service.InstaService
 import com.github.instagram4j.instagram4j.IGClient
 import org.apache.commons.logging.{Log, LogFactory}
 
+import java.util.{Timer, TimerTask}
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
-object InstaStorySaver extends App with Config {
+object StorySaverScheduler extends App with Config {
   val logger: Log = LogFactory.getLog(this.getClass)
   val timer = new Timer()
 
@@ -20,7 +19,7 @@ object InstaStorySaver extends App with Config {
     def run(): Unit =
       Try {
         logger.info("Starting Saving Stories...")
-        InstaService.saveStoriesToS3
+        InstaService.saveStories(enableS3Backup)
       } match {
         case Success(_) => logger.info("Finish Success Story, yuu are the best!!!")
         case Failure(exception) => logger.error("Story error on: ", exception)
@@ -30,7 +29,7 @@ object InstaStorySaver extends App with Config {
     def run(): Unit =
       Try {
         logger.info("Starting Saving Feeds...")
-        InstaService.saveFeedsToS3
+        InstaService.saveFeeds(enableS3Backup)
       } match {
         case Success(_) => logger.info("Finish Success Feed, yuu are the best!!!")
         case Failure(exception) => logger.error("Feed error on: ", exception)

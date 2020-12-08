@@ -15,6 +15,6 @@ trait Config {
   val enableS3Backup: Boolean = config.getBoolean("enable-s3-backup")
   val clientS3SettingPath = "setting/igclient.ser"
   val cookieS3SettingPath = "setting/cookie.ser"
-  val clientSettingTMPPath = "/tmp/igclient.ser"
-  val cookieSettingTMPPath = "/tmp/cookie.ser"
+  val clientSettingTMPPath = s"${System.getProperty("java.io.tmpdir")}/igclient.ser"
+  val cookieSettingTMPPath = s"${System.getProperty("java.io.tmpdir")}/cookie.ser"
 }

@@ -6,21 +6,19 @@ Default scheduler is 24 hours
 
 Firstly, set this environment variables your workground;
 
+run your local, download fat jar,
+
+[instastorysaver.jar](https://github.com/alikemalocalan/instagram-story-saver/releases/download/0.1.4-SNAPSHOT/instastorysaver.jar)
+
+and 
+
 ```bash
-USERNAME    // instagram username
-PASSWORD    // instagram password
-
-BUCKETNAME  //sample-bucket
-REGION      // us-east-1
-ENPOINT     // like s3.us-east-1.amazonaws.com
-
-AWS_ACCESS_KEY_ID  
-AWS_SECRET_ACCESS_KEY
+java -jar instastorysaver.jar --username "crazylenin1917" --password "internationalismnotismisnotemparialism"
 ```
 
-and run...
+and look your home directory for stories !!!
 
-or Deploy Haroku
+or Deploy Haroku for saving to AWS S3
 
 [![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/alikemalocalan/instagram-story-saver/tree/master)
 

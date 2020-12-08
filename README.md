@@ -8,7 +8,7 @@ Firstly, set this environment variables your workground;
 
 run your local, download fat jar,
 
-[instastorysaver.jar](https://github.com/alikemalocalan/instagram-story-saver/releases/download/0.1.4-SNAPSHOT/instastorysaver.jar)
+[instastorysaver.jar](https://github.com/alikemalocalan/instagram-story-saver/releases/download/0.1.4/instastorysaver.jar)
 
 and 
 

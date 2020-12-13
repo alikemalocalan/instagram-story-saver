@@ -13,7 +13,7 @@ run your local, download fat jar,
 and 
 
 ```bash
-java -jar instastorysaver.jar --username "crazylenin1917" --password "internationalismnotismisnotemparialism"
+java -jar instastorysaver.jar --username "crazylenin1917" --password "internationalismisnotemparialism"
 ```
 
 and look your home directory for stories !!!

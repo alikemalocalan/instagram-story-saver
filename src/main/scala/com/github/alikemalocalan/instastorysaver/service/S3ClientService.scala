@@ -1,16 +1,16 @@
 package com.github.alikemalocalan.instastorysaver.service
 
-import java.io.File
-
 import com.amazonaws.auth.EnvironmentVariableCredentialsProvider
 import com.amazonaws.client.builder.AwsClientBuilder.EndpointConfiguration
 import com.amazonaws.services.s3.model._
 import com.amazonaws.services.s3.{AmazonS3, AmazonS3ClientBuilder}
 import com.github.alikemalocalan.instastorysaver.Config
+import com.github.alikemalocalan.instastorysaver.model.UrlOperation
 import okhttp3.{OkHttpClient, Request}
 import org.apache.commons.io.FileUtils
 import org.apache.commons.logging.{Log, LogFactory}
 
+import java.io.File
 import scala.util.{Failure, Success, Try}
 
 object S3ClientService extends Config {
@@ -24,7 +24,7 @@ object S3ClientService extends Config {
     .withEndpointConfiguration(new EndpointConfiguration(s3Endpoint, region))
     .build()
 
-  def uploadUrl(file: File, destination: String): Unit = {
+  def uploadToS3(file: File, destination: String): Unit = {
     Try {
       // Upload a file as a new object with ContentType and title specified.
       val result = s3Client.putObject(bucketName, destination, file)
@@ -70,5 +70,15 @@ object S3ClientService extends Config {
 
     file
   }
+
+  def upload(operations: Stream[UrlOperation], enableS3: Boolean, defaultFolder: Option[String] = None): Unit =
+    operations.foreach { operation =>
+      logger.info(operation)
+      val file = downloadUrl(operation.url)
+      if (enableS3) {
+        uploadToS3(file, operation.fileFullPath)
+      } else FileUtils.moveFile(file, new File(s"${defaultFolder.get}/${operation.fileFullPath}"))
+      file.delete()
+    }
 
 }

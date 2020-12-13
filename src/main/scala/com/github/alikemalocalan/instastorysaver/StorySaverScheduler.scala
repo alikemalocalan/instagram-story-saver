@@ -35,6 +35,17 @@ object StorySaverScheduler extends App with Config {
         case Failure(exception) => logger.error("Feed error on: ", exception)
       }
   }
+  val highLightStoryScheduler: TimerTask = new TimerTask {
+    def run(): Unit =
+      Try {
+        logger.info("Starting Saving HighLighted Story...")
+        InstaService.saveUserHighLightStories(enableS3Backup)
+      } match {
+        case Success(_) => logger.info("Finish Success HighLighted Story yuu are the best!!!")
+        case Failure(exception) => logger.error("HighLighted Story error on: ", exception)
+      }
+  }
   timer.scheduleAtFixedRate(storyScheduler, 3.seconds.toMillis, 24.hours.toMillis)
-  timer.scheduleAtFixedRate(feedScheduler, 15.minutes.toMillis, 168.hours.toMillis)
+  timer.scheduleAtFixedRate(feedScheduler, 30.minutes.toMillis, 168.hours.toMillis)
+  timer.scheduleAtFixedRate(highLightStoryScheduler, 15.minutes.toMillis, 168.hours.toMillis)
 }

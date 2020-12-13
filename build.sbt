@@ -11,8 +11,8 @@ resolvers in Global ++= Seq(
 )
 
 libraryDependencies ++= Seq(
-  "com.github.instagram4j" % "instagram4j" % "2.0.0",
-  "com.amazonaws" % "aws-java-sdk-s3" % "1.11.894",
+  "com.github.instagram4j" % "instagram4j" % "2.0.1",
+  "com.amazonaws" % "aws-java-sdk-s3" % "1.11.918",
   "com.typesafe" % "config" % "1.4.1",
   "javax.xml.bind" % "jaxb-api" % "2.3.1",
   "commons-io" % "commons-io" % "2.8.0",

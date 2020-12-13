@@ -30,8 +30,8 @@ object LoginService extends Config {
       serialize(client, clientFile)
       serialize(jar, cookieFile)
       if (enableS3Backup) {
-        uploadUrl(clientFile, clientS3SettingPath)
-        uploadUrl(cookieFile, cookieS3SettingPath)
+        uploadToS3(clientFile, clientS3SettingPath)
+        uploadToS3(cookieFile, cookieS3SettingPath)
       }
       client
     }

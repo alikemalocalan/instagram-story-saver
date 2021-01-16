@@ -26,13 +26,15 @@ object S3ClientService extends Config {
 
   def uploadToS3(file: File, destination: String): Unit = {
     Try {
-      // Upload a file as a new object with ContentType and title specified.
-      val result = s3Client.putObject(bucketName, destination, file)
-      file.deleteOnExit()
-      result
+      if (!s3Client.doesObjectExist(bucketName, destination)) {
+        // Upload a file as a new object with ContentType and title specified.
+        s3Client.putObject(bucketName, destination, file)
+        file.deleteOnExit()
+      }
+      else
+        logger.info(s"File also exist : $destination")
     } match {
-      case Success(result) =>
-        logger.info(result.getContentMd5)
+      case Success(_) =>
       case Failure(e) =>
         logger.error(e)
     }
@@ -71,7 +73,7 @@ object S3ClientService extends Config {
     file
   }
 
-  def upload(operations: LazyList[UrlOperation], enableS3: Boolean, defaultFolder: Option[String] = None): Unit =
+  def upload(operations: LazyList[UrlOperation], enableS3: Boolean, defaultFolder: Option[String]): Unit =
     operations.foreach { operation =>
       logger.info(operation)
       val file = downloadUrl(operation.url)

@@ -17,10 +17,10 @@ import scala.collection.convert.ImplicitConversions._
 object InstaService {
   val logger: Log = LogFactory.getLog(this.getClass)
 
-  def getFollowingUsers(implicit client: IGClient): Stream[User] = {
-    client.getActions.users().findByUsername(getAccountUserName).thenApply[Stream[User]] { user =>
+  def getFollowingUsers(implicit client: IGClient): LazyList[User] = {
+    client.getActions.users().findByUsername(getAccountUserName).thenApply[LazyList[User]] { user =>
       user.followingFeed()
-        .toStream
+        .to(LazyList)
         .flatMap(user => user.getUsers.map { user =>
           User(user.getUsername, user.getPk)
         })
@@ -35,17 +35,17 @@ object InstaService {
     LoginService.serializeLogin(userName, password)
   }
 
-  def getStoriesAllFollowing(users: Stream[User])(implicit client: IGClient): Stream[UserStories] =
+  def getStoriesAllFollowing(users: LazyList[User])(implicit client: IGClient): LazyList[UserStories] =
     users.map(user => InstaService.getUserStory(user).join())
 
-  def getFeedsAllFollowing(users: Stream[User])(implicit client: IGClient): Stream[UserFeedMedias] =
+  def getFeedsAllFollowing(users: LazyList[User])(implicit client: IGClient): LazyList[UserFeedMedias] =
     users.map(user => InstaService.getUserFeed(user).join())
 
-  def getUserHighLightStoriesAllFollowing(users: Stream[User])(implicit client: IGClient): Stream[UserHighLightStoryMedias] =
+  def getUserHighLightStoriesAllFollowing(users: LazyList[User])(implicit client: IGClient): LazyList[UserHighLightStoryMedias] =
     users.map(user => InstaService.getUserHighLightStory(user).join())
 
   def saveStories(enableS3: Boolean, defaultFolder: Option[String] = None)(implicit client: IGClient): Unit = {
-    val users: Stream[UserStories] = getStoriesAllFollowing(InstaService.getFollowingUsers)
+    val users: LazyList[UserStories] = getStoriesAllFollowing(InstaService.getFollowingUsers)
 
     val operations = users
       .flatMap { userStories =>
@@ -112,8 +112,8 @@ object InstaService {
   private def getUserStory(user: User)(implicit client: IGClient): CompletableFuture[UserStories] =
     new FeedUserStoryRequest(user.userId).execute(client).thenApply[UserStories] { userStory =>
       val stories = if (userStory.getReel != null)
-        userStory.getReel.getItems.flatMap(reelMediaToUserStories)
-      else List()
+        userStory.getReel.getItems.flatMap(reelMediaToUserStories).toSeq
+      else Seq()
       UserStories(user, stories)
     }.exceptionally { _ =>
       UserStories(user, List())
@@ -122,7 +122,7 @@ object InstaService {
   private def getUserFeed(user: User)(implicit client: IGClient): CompletableFuture[UserFeedMedias] =
     new FeedUserRequest(user.userId).execute(client).thenApply[UserFeedMedias] { feed =>
       val feedList = feed.getItems.flatMap(timelineMediaToUserFeeds)
-      UserFeedMedias(user, feedList)
+      UserFeedMedias(user, feedList.toSeq)
     }.exceptionally { _ =>
       UserFeedMedias(user, List())
     }

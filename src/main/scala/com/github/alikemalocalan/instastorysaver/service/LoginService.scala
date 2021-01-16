@@ -1,8 +1,9 @@
 package com.github.alikemalocalan.instastorysaver.service
 
+import com.github.alikemalocalan.instastorysaver.Config
 import com.github.alikemalocalan.instastorysaver.Utils.{deserialize, serialize}
+import com.github.alikemalocalan.instastorysaver.model.SerializableCookieJar
 import com.github.alikemalocalan.instastorysaver.service.S3ClientService._
-import com.github.alikemalocalan.instastorysaver.{Config, SerializableCookieJar}
 import com.github.instagram4j.instagram4j.IGClient
 import com.github.instagram4j.instagram4j.utils.IGUtils
 import okhttp3.OkHttpClient
@@ -38,7 +39,7 @@ object LoginService extends Config {
 
   }
 
-  def formTestHttpClient(jar: SerializableCookieJar): OkHttpClient =
+  private def formTestHttpClient(jar: SerializableCookieJar): OkHttpClient =
     IGUtils.defaultHttpClientBuilder.cookieJar(jar).build
 
   private def getSavingClientSettingFiles: (File, File) =

@@ -71,13 +71,17 @@ object S3ClientService extends Config {
     file
   }
 
-  def upload(operations: Stream[UrlOperation], enableS3: Boolean, defaultFolder: Option[String] = None): Unit =
+  def upload(operations: LazyList[UrlOperation], enableS3: Boolean, defaultFolder: Option[String] = None): Unit =
     operations.foreach { operation =>
       logger.info(operation)
       val file = downloadUrl(operation.url)
       if (enableS3) {
         uploadToS3(file, operation.fileFullPath)
-      } else FileUtils.moveFile(file, new File(s"${defaultFolder.get}/${operation.fileFullPath}"))
+      } else {
+        val destinationFile = new File(s"${defaultFolder.get}/${operation.fileFullPath}")
+        if (!destinationFile.exists())
+          FileUtils.moveFile(file, destinationFile)
+      }
       file.delete()
     }
 

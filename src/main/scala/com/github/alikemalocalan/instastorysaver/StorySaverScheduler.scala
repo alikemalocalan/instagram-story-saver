@@ -46,6 +46,6 @@ object StorySaverScheduler extends App with Config {
       }
   }
   timer.scheduleAtFixedRate(storyScheduler, 3.seconds.toMillis, 24.hours.toMillis)
-  timer.scheduleAtFixedRate(feedScheduler, 30.minutes.toMillis, 168.hours.toMillis)
+  //timer.scheduleAtFixedRate(feedScheduler, 30.minutes.toMillis, 168.hours.toMillis)
   timer.scheduleAtFixedRate(highLightStoryScheduler, 15.minutes.toMillis, 168.hours.toMillis)
 }

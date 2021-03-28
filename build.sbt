@@ -5,12 +5,12 @@ organization := "com.github.alikemalocalan"
 scalaVersion := "2.13.4"
 
 libraryDependencies ++= Seq(
-  "com.github.instagram4j" % "instagram4j" % "2.0.3",
+  "com.github.instagram4j" % "instagram4j" % "2.0.4",
   "com.amazonaws" % "aws-java-sdk-s3" % "1.11.938",
   "com.typesafe" % "config" % "1.4.1",
   "javax.xml.bind" % "jaxb-api" % "2.3.1",
   "commons-io" % "commons-io" % "2.8.0",
-  "org.rogach" %% "scallop" % "4.0.1"
+  "org.rogach" %% "scallop" % "4.0.2"
 )
 
 mainClass in Compile := Some("com.github.alikemalocalan.instastorysaver.StorySaverScheduler")

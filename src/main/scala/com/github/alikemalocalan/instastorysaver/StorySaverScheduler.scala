@@ -21,7 +21,7 @@ object StorySaverScheduler extends App with Config {
         logger.info("Starting Saving Stories...")
         InstaService.saveStories(enableS3Backup)
       } match {
-        case Success(_) => logger.info("Finish Success Story, yuu are the best!!!")
+        case Success(_) => logger.info("Finish Success Story!!!")
         case Failure(exception) => logger.error("Story error on: ", exception)
       }
   }
@@ -31,8 +31,18 @@ object StorySaverScheduler extends App with Config {
         logger.info("Starting Saving Feeds...")
         InstaService.saveFeeds(enableS3Backup)
       } match {
-        case Success(_) => logger.info("Finish Success Feed, yuu are the best!!!")
+        case Success(_) => logger.info("Finish Success Feed!!!")
         case Failure(exception) => logger.error("Feed error on: ", exception)
+      }
+  }
+  val reelScheduler: TimerTask = new TimerTask {
+    def run(): Unit =
+      Try {
+        logger.info("Starting Saving Reels...")
+        InstaService.saveReels(enableS3Backup)
+      } match {
+        case Success(_) => logger.info("Finish Success Reels!!!")
+        case Failure(exception) => logger.error("Reels error on: ", exception)
       }
   }
   val highLightStoryScheduler: TimerTask = new TimerTask {
@@ -46,6 +56,7 @@ object StorySaverScheduler extends App with Config {
       }
   }
   timer.scheduleAtFixedRate(storyScheduler, 3.seconds.toMillis, 24.hours.toMillis)
-  //timer.scheduleAtFixedRate(feedScheduler, 30.minutes.toMillis, 168.hours.toMillis)
+  timer.scheduleAtFixedRate(feedScheduler, 30.minutes.toMillis, 168.hours.toMillis)
+  timer.scheduleAtFixedRate(reelScheduler, 1.hours.toMillis, 168.hours.toMillis)
   timer.scheduleAtFixedRate(highLightStoryScheduler, 15.minutes.toMillis, 168.hours.toMillis)
 }

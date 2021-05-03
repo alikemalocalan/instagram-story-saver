@@ -4,7 +4,7 @@ import com.github.alikemalocalan.instastorysaver.model._
 import com.github.instagram4j.instagram4j.IGClient
 import com.github.instagram4j.instagram4j.models.media.reel.{ReelImageMedia, ReelMedia, ReelVideoMedia}
 import com.github.instagram4j.instagram4j.models.media.timeline._
-import com.github.instagram4j.instagram4j.requests.feed.{FeedReelsMediaRequest, FeedUserRequest, FeedUserStoryRequest}
+import com.github.instagram4j.instagram4j.requests.feed.{FeedReelsMediaRequest, FeedUserReelMediaRequest, FeedUserRequest, FeedUserStoryRequest}
 import com.github.instagram4j.instagram4j.requests.highlights.HighlightsUserTrayRequest
 import com.github.instagram4j.instagram4j.utils.IGUtils
 import org.apache.commons.logging.{Log, LogFactory}
@@ -41,6 +41,9 @@ object InstaService {
   def getFeedsAllFollowing(users: LazyList[User])(implicit client: IGClient): LazyList[UserFeedMedias] =
     users.map(user => InstaService.getUserFeed(user).join())
 
+  def getReelsAllFollowing(users: LazyList[User])(implicit client: IGClient): LazyList[UserFeedMedias] =
+    users.map(user => InstaService.getUserReel(user).join())
+
   def getUserHighLightStoriesAllFollowing(users: LazyList[User])(implicit client: IGClient): LazyList[UserHighLightStoryMedias] =
     users.map(user => InstaService.getUserHighLightStory(user).join())
 
@@ -65,6 +68,19 @@ object InstaService {
         userStories.medias
           .map { media =>
             UrlOperation(media.url, userStories.folderPathPrefix, "feeds")
+          }
+      }
+    S3ClientService.upload(operations, enableS3, defaultFolder)
+  }
+
+  def saveReels(enableS3: Boolean, defaultFolder: Option[String] = None)(implicit client: IGClient): Unit = {
+    val users = getReelsAllFollowing(InstaService.getFollowingUsers)
+
+    val operations = users
+      .flatMap { userStories =>
+        userStories.medias
+          .map { media =>
+            UrlOperation(media.url, userStories.folderPathPrefix, "reels")
           }
       }
     S3ClientService.upload(operations, enableS3, defaultFolder)
@@ -109,6 +125,16 @@ object InstaService {
 
   }
 
+  private def reelMediaToUserFeeds(item: ReelMedia): Seq[TimelinedMedia] = {
+    item match {
+      case photo: ReelImageMedia =>
+        List(Media(photo.getImage_versions2.getCandidates.maxBy(_.getHeight).getUrl, photo.getTaken_at))
+      case video: ReelVideoMedia => List(Media(video.getVideo_versions.maxBy(_.getHeight).getUrl, video.getTaken_at))
+      case _ => List()
+    }
+
+  }
+
   private def getUserStory(user: User)(implicit client: IGClient): CompletableFuture[UserStories] =
     new FeedUserStoryRequest(user.userId).execute(client).thenApply[UserStories] { userStory =>
       val stories = if (userStory.getReel != null)
@@ -123,6 +149,14 @@ object InstaService {
     new FeedUserRequest(user.userId).execute(client).thenApply[UserFeedMedias] { feed =>
       val feedList = feed.getItems.flatMap(timelineMediaToUserFeeds)
       UserFeedMedias(user, feedList.toSeq)
+    }.exceptionally { _ =>
+      UserFeedMedias(user, List())
+    }
+
+  private def getUserReel(user: User)(implicit client: IGClient): CompletableFuture[UserFeedMedias] =
+    new FeedUserReelMediaRequest(user.userId).execute(client).thenApply[UserFeedMedias] { reel =>
+      val reelList = reel.getReel.getItems.flatMap(reelMediaToUserFeeds)
+      UserFeedMedias(user, reelList.toSeq)
     }.exceptionally { _ =>
       UserFeedMedias(user, List())
     }

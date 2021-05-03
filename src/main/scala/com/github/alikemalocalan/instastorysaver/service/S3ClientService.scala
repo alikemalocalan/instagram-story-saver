@@ -24,12 +24,13 @@ object S3ClientService extends Config {
     .withEndpointConfiguration(new EndpointConfiguration(s3Endpoint, region))
     .build()
 
-  def uploadToS3(file: File, destination: String): Unit = {
+  def uploadToS3(downloadFile: () => File, destination: String): Unit = {
     Try {
       if (!s3Client.doesObjectExist(bucketName, destination)) {
+        val downloadedFile = downloadFile()
         // Upload a file as a new object with ContentType and title specified.
-        s3Client.putObject(bucketName, destination, file)
-        file.deleteOnExit()
+        s3Client.putObject(bucketName, destination, downloadedFile)
+        downloadedFile.deleteOnExit()
       }
       else
         logger.info(s"File also exist : $destination")
@@ -76,15 +77,19 @@ object S3ClientService extends Config {
   def upload(operations: LazyList[UrlOperation], enableS3: Boolean, defaultFolder: Option[String]): Unit =
     operations.foreach { operation =>
       logger.info(operation)
-      val file = downloadUrl(operation.url)
+      val downloadedFile = () => downloadUrl(operation.url)
+
       if (enableS3) {
-        uploadToS3(file, operation.fileFullPath)
+        uploadToS3(downloadedFile, operation.fileFullPath)
       } else {
         val destinationFile = new File(s"${defaultFolder.get}/${operation.fileFullPath}")
-        if (!destinationFile.exists())
+        if (!destinationFile.exists()) {
+          val file = downloadedFile()
           FileUtils.moveFile(file, destinationFile)
+          file.delete()
+        }
       }
-      file.delete()
+
     }
 
 }

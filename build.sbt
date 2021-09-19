@@ -4,8 +4,8 @@ organization := "com.github.alikemalocalan"
 scalaVersion := "2.13.6"
 
 libraryDependencies ++= Seq(
-  "com.github.instagram4j" % "instagram4j"     % "2.0.5",
-  "com.amazonaws"          % "aws-java-sdk-s3" % "1.11.1009",
+  "com.github.instagram4j" % "instagram4j"     % "2.0.6",
+  "com.amazonaws"          % "aws-java-sdk-s3" % "1.12.62",
   "com.typesafe"           % "config"          % "1.4.1",
   "javax.xml.bind"         % "jaxb-api"        % "2.3.1",
   "commons-io"             % "commons-io"      % "2.11.0",

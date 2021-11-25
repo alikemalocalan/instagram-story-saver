@@ -4,19 +4,14 @@ import com.github.alikemalocalan.instastorysaver.model._
 import com.github.instagram4j.instagram4j.IGClient
 import com.github.instagram4j.instagram4j.models.media.reel.{ReelImageMedia, ReelMedia, ReelVideoMedia}
 import com.github.instagram4j.instagram4j.models.media.timeline._
-import com.github.instagram4j.instagram4j.requests.feed.{
-  FeedReelsMediaRequest,
-  FeedUserReelMediaRequest,
-  FeedUserRequest,
-  FeedUserStoryRequest
-}
+import com.github.instagram4j.instagram4j.requests.feed._
 import com.github.instagram4j.instagram4j.requests.highlights.HighlightsUserTrayRequest
 import com.github.instagram4j.instagram4j.utils.IGUtils
 import org.apache.commons.logging.{Log, LogFactory}
 
 import java.util
 import java.util.concurrent.CompletableFuture
-import scala.collection.convert.ImplicitConversions._
+import scala.collection.convert.ImplicitConversions.`iterable AsScalaIterable`
 
 object InstaService {
   val logger: Log = LogFactory.getLog(this.getClass)

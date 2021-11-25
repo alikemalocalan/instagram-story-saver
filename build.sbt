@@ -1,15 +1,15 @@
 name := "instastorysaver"
 version := "0.2.0"
 organization := "com.github.alikemalocalan"
-scalaVersion := "2.13.6"
+scalaVersion := "2.13.7"
 
 libraryDependencies ++= Seq(
   "com.github.instagram4j" % "instagram4j"     % "2.0.6",
-  "com.amazonaws"          % "aws-java-sdk-s3" % "1.12.62",
+  "com.amazonaws"          % "aws-java-sdk-s3" % "1.12.111",
   "com.typesafe"           % "config"          % "1.4.1",
   "javax.xml.bind"         % "jaxb-api"        % "2.3.1",
   "commons-io"             % "commons-io"      % "2.11.0",
-  "org.rogach"             %% "scallop"        % "4.0.4"
+  "org.rogach"             %% "scallop"        % "4.1.0"
 )
 
 mainClass in Compile := Some("com.github.alikemalocalan.instastorysaver.StorySaverScheduler")

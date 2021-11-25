@@ -25,8 +25,8 @@ object LoginService extends Config {
       logger.info("Serializing. . .")
       client.serialize(clientFile, cookieFile)
       if (enableS3Backup) {
-        uploadToS3(() => clientFile, clientS3SettingPath)
-        uploadToS3(() => cookieFile, cookieS3SettingPath)
+        uploadToS3(clientS3SettingPath)(() => clientFile)
+        uploadToS3(cookieS3SettingPath)(() => clientFile)
       }
       client
     }

@@ -17,29 +17,29 @@ object S3ClientService extends Config {
   val logger: Log = LogFactory.getLog(this.getClass)
 
   val client = new OkHttpClient
-  val s3Client: AmazonS3 = AmazonS3ClientBuilder.standard()
+
+  val s3Client: AmazonS3 = AmazonS3ClientBuilder
+    .standard()
     .withCredentials(new EnvironmentVariableCredentialsProvider())
     .withPathStyleAccessEnabled(true)
     .withChunkedEncodingDisabled(false)
     .withEndpointConfiguration(new EndpointConfiguration(s3Endpoint, region))
     .build()
 
-  def uploadToS3(downloadFile: () => File, destination: String): Unit = {
+  def uploadToS3(destination: String)(downloadFile: () => File): Unit =
     Try {
       if (!s3Client.doesObjectExist(bucketName, destination)) {
         val downloadedFile = downloadFile()
         // Upload a file as a new object with ContentType and title specified.
         s3Client.putObject(bucketName, destination, downloadedFile)
         downloadedFile.deleteOnExit()
-      }
-      else
+      } else
         logger.info(s"File also exist : $destination")
     } match {
       case Success(_) =>
       case Failure(e) =>
         logger.error(e)
     }
-  }
 
   def getS3file(filePath: String, destinationPath: String): File = {
     val file = new File(destinationPath)
@@ -63,12 +63,12 @@ object S3ClientService extends Config {
       FileUtils.copyInputStreamToFile(inputStream, file)
     } match {
       case Success(_) => logger.debug("Finish Download")
-      case Failure(_) => if (reTryCount > 0) {
-        logger.info(s"Retrying $reTryCount. download file: $url ")
-        Try(file.delete())
-        downloadUrl(url, reTryCount - 1)
-      }
-      else logger.error(s"I cant download this url: $url")
+      case Failure(_) =>
+        if (reTryCount > 0) {
+          logger.info(s"Retrying $reTryCount. download file: $url ")
+          Try(file.delete())
+          downloadUrl(url, reTryCount - 1)
+        } else logger.error(s"I cant download this url: $url")
     }
 
     file
@@ -77,14 +77,13 @@ object S3ClientService extends Config {
   def upload(operations: LazyList[UrlOperation], enableS3: Boolean, defaultFolder: Option[String]): Unit =
     operations.foreach { operation =>
       logger.info(operation)
-      val downloadedFile = () => downloadUrl(operation.url)
 
       if (enableS3) {
-        uploadToS3(downloadedFile, operation.fileFullPath)
+        uploadToS3(operation.fileFullPath)(() => downloadUrl(operation.url))
       } else {
         val destinationFile = new File(s"${defaultFolder.get}/${operation.fileFullPath}")
         if (!destinationFile.exists()) {
-          val file = downloadedFile()
+          val file = downloadUrl(operation.url)
           FileUtils.moveFile(file, destinationFile)
           file.delete()
         }

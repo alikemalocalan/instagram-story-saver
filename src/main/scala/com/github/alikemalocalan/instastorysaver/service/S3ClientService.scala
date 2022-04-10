@@ -62,7 +62,7 @@ object S3ClientService extends Config {
       val inputStream = client.newCall(request).execute().body().byteStream()
       FileUtils.copyInputStreamToFile(inputStream, file)
     } match {
-      case Success(_) => logger.debug("Finish Download")
+      case Success(_) => logger.info(url)
       case Failure(_) =>
         if (reTryCount > 0) {
           logger.info(s"Retrying $reTryCount. download file: $url ")
@@ -76,8 +76,6 @@ object S3ClientService extends Config {
 
   def upload(operations: LazyList[UrlOperation], enableS3: Boolean, defaultFolder: Option[String]): Unit =
     operations.foreach { operation =>
-      logger.info(operation)
-
       if (enableS3) {
         uploadToS3(operation.fileFullPath)(() => downloadUrl(operation.url))
       } else {

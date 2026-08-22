@@ -1,37 +1,50 @@
 package com.github.alikemalocalan.instastorysaver
 
 import com.github.alikemalocalan.instastorysaver.service.InstaService
-import com.github.instagram4j.instagram4j.IGClient
+import com.instagram4j.web.Instagram4j
+import mainargs.{ParserForMethods, arg, main}
 import org.apache.commons.io.FileUtils
 import org.apache.commons.logging.{Log, LogFactory}
-import org.rogach.scallop._
 
+import java.io.File
 import scala.util.{Failure, Success, Try}
 
-class Conf(arguments: Seq[String]) extends ScallopConf(arguments) {
-  val username: ScallopOption[String] = opt[String](required = true)
-  val password: ScallopOption[String] = opt[String](required = true)
-  val destinationFolder: ScallopOption[String] =
-    opt[String](default = Some(s"${FileUtils.getUserDirectory.getAbsoluteFile}/instagram-stories"), required = false)
-  verify()
-}
-
 object StorySaverCLI {
-  val logger: Log = LogFactory.getLog(this.getClass)
+  private val logger: Log = LogFactory.getLog(getClass)
 
-  def main(args: Array[String]): Unit = {
-    val conf = new Conf(args)
+  @main
+  def run(
+      @arg(name = "username", doc = "Instagram username")
+      username: String,
+      @arg(name = "password", doc = "Instagram password (optional if session-id and csrf-token provided)")
+      password: String = "",
+      @arg(name = "session-id", doc = "Instagram sessionid cookie value (recommended)")
+      sessionId: String = "",
+      @arg(name = "csrf-token", doc = "Instagram csrftoken cookie value (recommended)")
+      csrfToken: String = "",
+      @arg(name = "destination-folder", doc = "Destination folder path for downloaded stories")
+      destinationFolder: String = s"${FileUtils.getUserDirectory.getAbsoluteFile}${File.separator}instagram-stories"
+  ): Unit = {
     Try {
-      implicit val client: IGClient = InstaService
-        .login(conf.username(), conf.password())
+      given client: Instagram4j =
+        if (sessionId.trim.nonEmpty && csrfToken.trim.nonEmpty) {
+          InstaService.fromSession(sessionId.trim, csrfToken.trim, username)
+        } else if (password.nonEmpty) {
+          InstaService.login(username, password)
+        } else {
+          throw new IllegalArgumentException("Either password or both session-id and csrf-token must be provided.")
+        }
 
-      logger.info("Starting Saving Stories...")
-      InstaService.saveStories(enableS3 = false, Some(conf.destinationFolder()))
+      logger.info("Starting saving stories...")
+      InstaService.saveStories(destinationFolder)
     } match {
-      case Success(_) => logger.info("Finish Success Story, you are the best!!!")
-      case Failure(exception) => logger.error("Story error on: ", exception)
+      case Success(_)  => logger.info("Successfully finished saving stories.")
+      case Failure(ex) => logger.error(s"Error saving stories: ${ex.getMessage}", ex)
     }
-
   }
 
+  def main(args: Array[String]): Unit = {
+    ParserForMethods(this).runOrExit(args.toIndexedSeq)
+  }
 }
+

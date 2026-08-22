@@ -10,17 +10,25 @@ run your local, download fat jar,
 
 [instastorysaver.jar](https://github.com/alikemalocalan/instagram-story-saver/releases/download/0.1.4/instastorysaver.jar)
 
-and 
+### Running locally
 
+Run using username and password:
 ```bash
-java -jar instastorysaver.jar --username "crazylenin1917" --password "internationalismisnotemparialism"
+java -jar instastorysaver.jar --username "your_username" --password "your_password"
 ```
 
-and look your home directory for stories !!!
+Or using browser session cookies (recommended to bypass Instagram bot blocks):
+```bash
+java -jar instastorysaver.jar --username "your_username" --session-id "YOUR_SESSION_ID" --csrf-token "YOUR_CSRF_TOKEN"
+```
 
-or Deploy Haroku for saving to AWS S3
+Or via environment variables / `application.conf`:
+- `USERNAME`
+- `PASSWORD`
+- `SESSION_ID`
+- `CSRF_TOKEN`
+- `DOWNLOAD_FOLDER`
 
-[![Deploy](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy?template=https://github.com/alikemalocalan/instagram-story-saver/tree/master)
 
 
 ### TODO list

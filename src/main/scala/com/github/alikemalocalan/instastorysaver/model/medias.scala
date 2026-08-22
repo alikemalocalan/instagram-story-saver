@@ -1,24 +1,22 @@
 package com.github.alikemalocalan.instastorysaver.model
 
+sealed trait TimelinedMedia {
+  def url: String
+  def takenOn: Long
 
-trait UserMedias {
-  val user: User
-
-  def medias: Seq[TimelinedMedia]
-
-  def folderPathPrefix: String = user.username
-}
-
-trait TimelinedMedia {
-  val url: String
-  val takenOn: Long
-
-  def toUserHighLightStoryMedia(title: String): HighLightStoryMedia = HighLightStoryMedia(url, takenOn, title)
+  def toUserHighLightStoryMedia(title: String): HighLightStoryMedia =
+    HighLightStoryMedia(url, takenOn, title)
 }
 
 case class Media(url: String, takenOn: Long) extends TimelinedMedia
 
 case class HighLightStoryMedia(url: String, takenOn: Long, title: String) extends TimelinedMedia
+
+sealed trait UserMedias {
+  def user: User
+  def medias: Seq[TimelinedMedia]
+  def folderPathPrefix: String = user.username
+}
 
 case class UserStories(user: User, medias: Seq[TimelinedMedia]) extends UserMedias
 

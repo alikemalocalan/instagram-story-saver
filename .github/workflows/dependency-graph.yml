@@ -1,12 +1,26 @@
 name: Update Dependency Graph
+
 on:
   push:
     branches:
-      - master # default branch of the project
+      - master
+      - main
+
 jobs:
   dependency-graph:
     name: Update Dependency Graph
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: scalacenter/sbt-dependency-submission@v2
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'sbt'
+
+      - name: Submit Dependency Graph
+        uses: scalacenter/sbt-dependency-submission@v3
+

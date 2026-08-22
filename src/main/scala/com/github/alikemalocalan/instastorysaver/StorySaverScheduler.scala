@@ -1,62 +1,53 @@
 package com.github.alikemalocalan.instastorysaver
 
 import com.github.alikemalocalan.instastorysaver.service.InstaService
-import com.github.instagram4j.instagram4j.IGClient
+import com.instagram4j.web.Instagram4j
 import org.apache.commons.logging.{Log, LogFactory}
 
 import java.util.{Timer, TimerTask}
-import scala.concurrent.duration._
+import scala.concurrent.duration.*
 import scala.util.{Failure, Success, Try}
 
-object StorySaverScheduler extends App with Config {
-  val logger: Log = LogFactory.getLog(this.getClass)
-  val timer = new Timer()
+object StorySaverScheduler extends Config {
+  private val logger: Log = LogFactory.getLog(getClass)
+  private val timer       = new Timer()
 
-  implicit val client: IGClient = InstaService
-    .login(userName, passWord)
+  given client: Instagram4j = (sessionId, csrfToken) match {
+    case (Some(session), Some(csrf)) =>
+      InstaService.fromSession(session, csrf, username)
+    case _ =>
+      InstaService.login(username, password)
+  }
 
-  val storyScheduler: TimerTask = new TimerTask {
-    def run(): Unit =
-      Try {
-        logger.info("Starting Saving Stories...")
-        InstaService.saveStories(enableS3Backup)
-      } match {
-        case Success(_) => logger.info("Finish Success Story!!!")
-        case Failure(exception) => logger.error("Story error on: ", exception)
-      }
+
+  def main(args: Array[String]): Unit = {
+    scheduleTask("Stories", initialDelay = 3.seconds, period = 24.hours) {
+      InstaService.saveStories(downloadFolder)
+    }
+
+    scheduleTask("Highlights", initialDelay = 10.minutes, period = 168.hours) {
+      InstaService.saveUserHighLightStories(downloadFolder)
+    }
+
+    scheduleTask("Feeds", initialDelay = 5.minutes, period = 168.hours) {
+      InstaService.saveFeeds(downloadFolder)
+    }
   }
-  val feedScheduler: TimerTask = new TimerTask {
-    def run(): Unit =
-      Try {
-        logger.info("Starting Saving Feeds...")
-        InstaService.saveFeeds(enableS3Backup)
-      } match {
-        case Success(_) => logger.info("Finish Success Feed!!!")
-        case Failure(exception) => logger.error("Feed error on: ", exception)
-      }
+
+  private def scheduleTask(name: String, initialDelay: FiniteDuration, period: FiniteDuration)(
+      action: => Unit
+  ): Unit = {
+    val task = new TimerTask {
+      override def run(): Unit =
+        Try {
+          logger.info(s"Starting saving $name...")
+          action
+        } match {
+          case Success(_)  => logger.info(s"Successfully finished saving $name.")
+          case Failure(ex) => logger.error(s"Error while saving $name: ${ex.getMessage}", ex)
+        }
+    }
+    timer.scheduleAtFixedRate(task, initialDelay.toMillis, period.toMillis)
   }
-  val reelScheduler: TimerTask = new TimerTask {
-    def run(): Unit =
-      Try {
-        logger.info("Starting Saving Reels...")
-        InstaService.saveReels(enableS3Backup)
-      } match {
-        case Success(_) => logger.info("Finish Success Reels!!!")
-        case Failure(exception) => logger.error("Reels error on: ", exception)
-      }
-  }
-  val highLightStoryScheduler: TimerTask = new TimerTask {
-    def run(): Unit =
-      Try {
-        logger.info("Starting Saving HighLighted Story...")
-        InstaService.saveUserHighLightStories(enableS3Backup)
-      } match {
-        case Success(_) => logger.info("Finish Success HighLighted Story yuu are the best!!!")
-        case Failure(exception) => logger.error("HighLighted Story error on: ", exception)
-      }
-  }
-  timer.scheduleAtFixedRate(storyScheduler, 3.seconds.toMillis, 24.hours.toMillis)
-  timer.scheduleAtFixedRate(highLightStoryScheduler, 10.minutes.toMillis, 168.hours.toMillis)
-  timer.scheduleAtFixedRate(reelScheduler, 15.minutes.toMillis, 168.hours.toMillis)
-  timer.scheduleAtFixedRate(feedScheduler, 5.minutes.toMillis, 168.hours.toMillis)
 }
+

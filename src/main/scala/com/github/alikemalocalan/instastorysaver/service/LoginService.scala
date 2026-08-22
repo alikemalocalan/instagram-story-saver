@@ -1,41 +1,25 @@
 package com.github.alikemalocalan.instastorysaver.service
 
-import com.github.alikemalocalan.instastorysaver.Config
-import com.github.alikemalocalan.instastorysaver.service.S3ClientService._
-import com.github.instagram4j.instagram4j.IGClient
+import com.instagram4j.web.Instagram4j
 import org.apache.commons.logging.{Log, LogFactory}
 
-import java.io._
+object LoginService {
+  private val logger: Log = LogFactory.getLog(getClass)
 
-object LoginService extends Config {
-  val logger: Log = LogFactory.getLog(this.getClass)
-
-  def serializeLogin(username: String, password: String): IGClient = {
-    val (clientFile: File, cookieFile: File) = getSavingClientSettingFiles
-
-    if (clientFile.exists() && cookieFile.exists()) {
-      logger.info("Deserializing. . .")
-      IGClient.deserialize(clientFile, cookieFile)
-    } else {
-
-      val client = new IGClient.Builder()
-        .username(username)
-        .password(password)
-        .login()
-      logger.info("Serializing. . .")
-      client.serialize(clientFile, cookieFile)
-      if (enableS3Backup) {
-        uploadToS3(clientS3SettingPath)(() => clientFile)
-        uploadToS3(cookieS3SettingPath)(() => clientFile)
-      }
-      client
-    }
-
+  def login(username: String, password: String): Instagram4j = {
+    logger.info(s"Logging in as $username...")
+    new Instagram4j(username, password)
   }
 
-  private def getSavingClientSettingFiles: (File, File) =
-    if (enableS3Backup && existS3file(clientS3SettingPath) && existS3file(cookieS3SettingPath))
-      (getS3file(clientS3SettingPath, clientSettingTMPPath), getS3file(cookieS3SettingPath, cookieSettingTMPPath))
-    else (new File(clientSettingTMPPath), new File(cookieSettingTMPPath))
-
+  def fromSession(sessionId: String, csrfToken: String, username: String = ""): Instagram4j = {
+    logger.info(s"Initializing Instagram client with session cookies for ${if (username.nonEmpty) username else "user"}...")
+    val client = Instagram4j.getInstance(sessionId, csrfToken)
+    if (username.nonEmpty) {
+      client.username = username
+    }
+    client
+  }
 }
+
+
+

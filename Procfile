@@ -1,1 +1,0 @@
-worker: target/universal/stage/bin/instastorysaver -Dhttp.proxyHost=$PROXY_HOST -Dhttp.proxyPort=$PROXY_PORT

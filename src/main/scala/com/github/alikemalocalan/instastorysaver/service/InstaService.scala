@@ -41,6 +41,22 @@ object InstaService {
         throw ex
     }
 
+  private def extractMediaItems(items: android.org.json.JSONArray): List[Media] =
+    (0 until items.length()).flatMap { j =>
+      val item = items.getJSONObject(j)
+      val videoUrl = Option(item.optJSONArray("video_versions"))
+        .filter(!_.isEmpty)
+        .map(_.getJSONObject(0).getString("url"))
+
+      val imageUrl = Option(item.optJSONObject("image_versions2"))
+        .flatMap(v => Option(v.optJSONArray("candidates")))
+        .filter(!_.isEmpty)
+        .map(_.getJSONObject(0).getString("url"))
+
+      val downloadUrl = videoUrl.orElse(imageUrl)
+      downloadUrl.map(url => Media(url, System.currentTimeMillis()))
+    }.toList
+
   def getUserStories(user: User)(using client: Instagram4j): UserStories =
     Try {
       val vars = new android.org.json.JSONObject()
@@ -50,21 +66,7 @@ object InstaService {
       val reels = Option(res.optJSONObject("xdt_api__v1__feed__reels_media")).flatMap(o => Option(o.optJSONArray("reels_media")))
       val stories = reels.filter(!_.isEmpty).map { reelArray =>
         val reel = reelArray.getJSONObject(0)
-        Option(reel.optJSONArray("items")).map { items =>
-          (0 until items.length()).flatMap { j =>
-            val item = items.getJSONObject(j)
-            val isVideo = item.optInt("media_type") == 2
-            val downloadUrl = if (isVideo) {
-              Option(item.optJSONArray("video_versions")).filter(!_.isEmpty).map(_.getJSONObject(0).getString("url"))
-            } else {
-              Option(item.optJSONObject("image_versions2"))
-                .flatMap(v => Option(v.optJSONArray("candidates")))
-                .filter(!_.isEmpty)
-                .map(_.getJSONObject(0).getString("url"))
-            }
-            downloadUrl.map(url => Media(url, System.currentTimeMillis()))
-          }.toList
-        }.getOrElse(List.empty)
+        Option(reel.optJSONArray("items")).map(extractMediaItems).getOrElse(List.empty)
       }.getOrElse(List.empty)
 
       UserStories(user, stories)
@@ -141,16 +143,24 @@ object InstaService {
           if (pk.nonEmpty) Some(pk -> username) else None
         }.toMap
 
-        val reelIds: Array[String] = (0 until tray.length()).map { i =>
-          tray.getJSONObject(i).optString("id", "")
-        }.filter(_.nonEmpty).toArray
+        val allUserIds = (0 until tray.length()).flatMap { i =>
+          val trayItem = tray.getJSONObject(i)
+          val userObj = Option(trayItem.optJSONObject("user"))
+          val pk = userObj.map(_.optString("pk", "")).filter(_.nonEmpty)
+          val id = Option(trayItem.optString("id", "")).filter(_.nonEmpty)
+          pk.orElse(id)
+        }.distinct.toList
 
-        val userStoriesList = reelIds.grouped(50).flatMap { batchIds =>
+        // Query GraphQL for all users in tray in batches of 15 to get their complete reel (both seen & unseen)
+        val userStoriesList = allUserIds.grouped(15).flatMap { batchIds =>
           Try {
+            val reelIdsArray = new android.org.json.JSONArray()
+            batchIds.foreach(reelIdsArray.put)
+
             val vars = new android.org.json.JSONObject()
             vars.put("initial_reel_id", batchIds.head)
-            vars.put("reel_ids", new android.org.json.JSONArray(batchIds))
-            vars.put("first", batchIds.length)
+            vars.put("reel_ids", reelIdsArray)
+            vars.put("first", 200) // Fetch all active stories per user batch
 
             val response = com.instagram4j.web.Utils.postGraphQL(client.session, com.instagram4j.web.Constants.GraphQl.STORY, vars)
             val edges = Option(response.optJSONObject("xdt_api__v1__feed__reels_media__connection"))
@@ -165,20 +175,7 @@ object InstaService {
               val user = User(username, userId)
 
               val items = Option(node.optJSONArray("items")).getOrElse(new android.org.json.JSONArray())
-              val medias = (0 until items.length()).flatMap { j =>
-                val item = items.getJSONObject(j)
-                val isVideo = item.optInt("media_type") == 2
-                val downloadUrl = if (isVideo) {
-                  Option(item.optJSONArray("video_versions")).filter(!_.isEmpty).map(_.getJSONObject(0).getString("url"))
-                } else {
-                  Option(item.optJSONObject("image_versions2"))
-                    .flatMap(v => Option(v.optJSONArray("candidates")))
-                    .filter(!_.isEmpty)
-                    .map(_.getJSONObject(0).getString("url"))
-                }
-                downloadUrl.map(url => Media(url, System.currentTimeMillis()))
-              }.toList
-
+              val medias = extractMediaItems(items)
               if (medias.nonEmpty) Some(UserStories(user, medias)) else None
             }
           } match {

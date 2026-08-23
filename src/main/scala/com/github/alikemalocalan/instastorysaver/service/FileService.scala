@@ -45,8 +45,13 @@ object FileService {
         }
 
         try {
-          Using.resources(body.byteStream(), Files.newOutputStream(partPath)) { (in, out) =>
-            in.transferTo(out)
+          val buffer = new Array[Byte](65536) // 64 KB optimized buffer to minimize Linux read/write syscalls
+          Using.resources(body.byteStream(), new java.io.BufferedOutputStream(Files.newOutputStream(partPath), 65536)) { (in, out) =>
+            var bytesRead = in.read(buffer)
+            while (bytesRead != -1) {
+              out.write(buffer, 0, bytesRead)
+              bytesRead = in.read(buffer)
+            }
             out.flush()
           }
 

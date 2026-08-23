@@ -38,15 +38,20 @@ WORKDIR /native
 COPY --from=builder /build/target/out/jvm/scala-3.3.8/instastorysaver/instastorysaver.jar ./app.jar
 
 RUN native-image \
+    -J-Xmx3g \
     -H:+UnlockExperimentalVMOptions \
     --no-fallback \
     --report-unsupported-elements-at-runtime \
     -O3 \
+    -march=armv8-a \
+    -R:MinHeapSize=16m \
+    -R:MaxHeapSize=64m \
+    --strict-image-heap \
     -H:+StripDebugInfo \
     --enable-https \
     --enable-http \
     --install-exit-handlers \
-    --initialize-at-build-time=org.slf4j.LoggerFactory,org.slf4j.simple.SimpleLoggerFactory,org.slf4j.simple.SimpleLogger \
+    --initialize-at-build-time=org.slf4j,com.typesafe.config,android.org.json,okio \
     -jar app.jar \
     -o instastorysaver-bin
 

@@ -34,10 +34,13 @@ graalVMNativeImageOptions ++= Seq(
   "--no-fallback",
   "-H:+StripDebugInfo",
   "-O3",
+  "-R:MinHeapSize=16m",
+  "-R:MaxHeapSize=64m",
+  "--strict-image-heap",
   "--enable-https",
   "--enable-http",
   "--install-exit-handlers",
-  "--initialize-at-build-time=org.slf4j.LoggerFactory,org.slf4j.simple.SimpleLoggerFactory,org.slf4j.simple.SimpleLogger"
+  "--initialize-at-build-time=org.slf4j.LoggerFactory,org.slf4j.simple.SimpleLoggerFactory,org.slf4j.simple.SimpleLogger,com.typesafe.config.ConfigFactory,android.org.json.JSONObject,okio.ByteString,okio.SegmentPool"
 )
 
 assembly / assemblyJarName := s"${name.value}.jar"

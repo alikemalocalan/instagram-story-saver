@@ -1,0 +1,71 @@
+# ==============================================================================
+# Multi-stage Dockerfile to build a static ARM64 (musl) native binary
+# specifically optimized for GL.iNet GL-MT3000 (OpenWrt / ARM64)
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Stage 1: Build the Fat JAR with sbt
+# ------------------------------------------------------------------------------
+FROM eclipse-temurin:21-jdk AS builder
+
+WORKDIR /build
+
+# Install latest sbt
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates jq && \
+    SBT_VER=$(curl -s https://api.github.com/repos/sbt/sbt/releases/latest | jq -r '.tag_name | ltrimstr("v")') && \
+    SBT_VER=${SBT_VER:-1.10.7} && \
+    echo "Installing latest sbt version: ${SBT_VER}" && \
+    curl -fL "https://github.com/sbt/sbt/releases/download/v${SBT_VER}/sbt-${SBT_VER}.tgz" | tar -xz -C /usr/local && \
+    ln -s /usr/local/sbt/bin/sbt /usr/local/bin/sbt && \
+    apt-get purge -y jq && apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy project definition & sources
+COPY project project
+COPY build.sbt .
+COPY src src
+
+# Compile and create assembly jar
+RUN sbt assembly
+
+# ------------------------------------------------------------------------------
+# Stage 2: Compile to native ARM64 binary using GraalVM Native Image
+# ------------------------------------------------------------------------------
+FROM ghcr.io/graalvm/native-image-community:21 AS native-builder
+
+WORKDIR /native
+
+COPY --from=builder /build/target/out/jvm/scala-3.3.8/instastorysaver/instastorysaver.jar ./app.jar
+
+RUN native-image \
+    -H:+UnlockExperimentalVMOptions \
+    --no-fallback \
+    --report-unsupported-elements-at-runtime \
+    -O3 \
+    -H:+StripDebugInfo \
+    --enable-https \
+    --enable-http \
+    --install-exit-handlers \
+    --initialize-at-build-time=org.slf4j.LoggerFactory,org.slf4j.simple.SimpleLoggerFactory,org.slf4j.simple.SimpleLogger \
+    -jar app.jar \
+    -o instastorysaver-bin
+
+# Create self-contained bundle for OpenWrt (musl)
+RUN mkdir -p /dist/lib && \
+    cp instastorysaver-bin /dist/instastorysaver-bin && \
+    # Copy dynamic linker and all dependent glibc shared libraries
+    cp -L /lib64/ld-linux-aarch64.so.1 /dist/lib/ 2>/dev/null || cp -L /lib/ld-linux-aarch64.so.1 /dist/lib/ && \
+    for lib in $(ldd instastorysaver-bin | grep '=>' | awk '{print $3}'); do \
+        [ -f "$lib" ] && cp -L "$lib" /dist/lib/; \
+    done && \
+    # Create portable runner script
+    printf '#!/bin/sh\nBASE_DIR="$(cd "$(dirname "$0")" && pwd)"\nexport LD_LIBRARY_PATH="$BASE_DIR/lib:$LD_LIBRARY_PATH"\nexec "$BASE_DIR/lib/ld-linux-aarch64.so.1" --library-path "$BASE_DIR/lib" "$BASE_DIR/instastorysaver-bin" "$@"\n' > /dist/instastorysaver && \
+    chmod +x /dist/instastorysaver /dist/instastorysaver-bin
+
+# ------------------------------------------------------------------------------
+# Stage 3: Export output bundle
+# ------------------------------------------------------------------------------
+FROM scratch AS export
+COPY --from=native-builder /dist /instastorysaver-router
+
+

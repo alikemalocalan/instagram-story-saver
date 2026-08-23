@@ -6,10 +6,10 @@ scalaVersion := "3.3.8"
 resolvers += "jitpack" at "https://jitpack.io"
 
 libraryDependencies ++= Seq(
-  "com.github.instagram4j.instagram4j" % "web"             % "3.0",
-  "com.typesafe"                       % "config"          % "1.4.9",
-  "com.lihaoyi"                        %% "mainargs"       % "0.7.8",
-  "ch.qos.logback"                     % "logback-classic" % "1.6.3"
+  "com.github.instagram4j.instagram4j" % "web"          % "3.0",
+  "com.typesafe"                       % "config"       % "1.4.9",
+  "com.lihaoyi"                        %% "mainargs"    % "0.7.8",
+  "org.slf4j"                          % "slf4j-simple" % "2.0.18"
 )
 
 Compile / mainClass := Some("com.github.alikemalocalan.instastorysaver.StorySaverScheduler")
@@ -27,19 +27,34 @@ val stage = taskKey[Unit]("Stage task")
 
 val Stage = config("stage")
 
-enablePlugins(JavaAppPackaging)
+enablePlugins(JavaAppPackaging, GraalVMNativeImagePlugin)
+
+graalVMNativeImageOptions ++= Seq(
+  "-H:+UnlockExperimentalVMOptions",
+  "--no-fallback",
+  "-H:+StripDebugInfo",
+  "-O3",
+  "--enable-https",
+  "--enable-http",
+  "--install-exit-handlers",
+  "--initialize-at-build-time=org.slf4j.LoggerFactory,org.slf4j.simple.SimpleLoggerFactory,org.slf4j.simple.SimpleLogger"
+)
 
 assembly / assemblyJarName := s"${name.value}.jar"
 
 assembly / assemblyMergeStrategy := {
-  case PathList("META-INF", "versions", _*)            => MergeStrategy.first
-  case PathList("META-INF", "okio.kotlin_module")      => MergeStrategy.first
-  case PathList("META-INF", "MANIFEST.MF")             => MergeStrategy.discard
-  case PathList("META-INF", "INDEX.LIST")              => MergeStrategy.discard
-  case PathList("META-INF", "LICENSE" | "LICENSE.txt") => MergeStrategy.discard
-  case PathList("META-INF", "NOTICE" | "NOTICE.txt")   => MergeStrategy.discard
-  case "module-info.class"                             => MergeStrategy.last
-  case other                                           => MergeStrategy.defaultMergeStrategy(other)
+  case PathList("META-INF", "services", _*)                                                 => MergeStrategy.concat
+  case PathList("META-INF", "versions", _*)                                                 => MergeStrategy.first
+  case PathList("META-INF", "maven", _*)                                                    => MergeStrategy.discard
+  case PathList("META-INF", "proguard", _*)                                                 => MergeStrategy.discard
+  case PathList("META-INF", "MANIFEST.MF" | "INDEX.LIST" | "DEPENDENCIES")                  => MergeStrategy.discard
+  case PathList("module-info.class")                                                        => MergeStrategy.discard
+  case path if path.endsWith(".SF") || path.endsWith(".DSA") || path.endsWith(".RSA")      => MergeStrategy.discard
+  case path if path.endsWith(".kotlin_module") || path.endsWith(".kotlin_metadata")        => MergeStrategy.discard
+  case path if path.endsWith(".kotlin_builtins")                                           => MergeStrategy.first
+  case path if path.endsWith(".md") || path.endsWith(".markdown") || path.endsWith(".txt")  => MergeStrategy.discard
+  case path if path.toLowerCase.contains("license") || path.toLowerCase.contains("notice") => MergeStrategy.discard
+  case other                                                                                => MergeStrategy.defaultMergeStrategy(other)
 }
 
 assembly / mainClass := Some("com.github.alikemalocalan.instastorysaver.StorySaverCLI")

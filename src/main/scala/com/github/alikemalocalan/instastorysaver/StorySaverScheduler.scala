@@ -22,7 +22,7 @@ object StorySaverScheduler extends Config {
     }
   )
 
-  given client: Instagram4j = (sessionId, csrfToken) match {
+  private def getClient: Instagram4j = (sessionId, csrfToken) match {
     case (Some(session), Some(csrf)) =>
       InstaService.fromSession(session, csrf, username)
     case _ =>
@@ -32,20 +32,27 @@ object StorySaverScheduler extends Config {
   def main(args: Array[String]): Unit = {
     registerShutdownHook()
 
-    scheduleTask("Stories", initialDelay = 3.seconds, period = 24.hours) {
+    logger.info("Initializing 24/7 Instagram Story Saver Daemon...")
+
+    // Check stories every 1 hour (Instagram stories expire in 24h)
+    scheduleTask("Stories", initialDelay = 5.seconds, period = 1.hour) {
+      given client: Instagram4j = getClient
       InstaService.saveStories(downloadFolder, maxConcurrentDownloads, requestDelayMs)
     }
 
+    // Check highlights weekly
     scheduleTask("Highlights", initialDelay = 10.minutes, period = 168.hours) {
+      given client: Instagram4j = getClient
       InstaService.saveUserHighLightStories(downloadFolder, maxConcurrentDownloads, requestDelayMs)
     }
 
-    scheduleTask("Feeds", initialDelay = 5.minutes, period = 168.hours) {
+    // Check feeds every 24 hours
+    scheduleTask("Feeds", initialDelay = 5.minutes, period = 24.hours) {
+      given client: Instagram4j = getClient
       InstaService.saveFeeds(downloadFolder, maxConcurrentDownloads, requestDelayMs)
     }
 
-    logger.info("StorySaverScheduler running. Press CTRL+C to terminate.")
-    // Keep main thread alive
+    logger.info("StorySaverScheduler running 24/7. Press CTRL+C to terminate.")
     try {
       Thread.currentThread().join()
     } catch {
@@ -62,11 +69,14 @@ object StorySaverScheduler extends Config {
         logger.info(s"Starting scheduled task: $name...")
         action
       } match {
-        case Success(_)  => logger.info(s"Finished scheduled task: $name.")
-        case Failure(ex) => logger.error(s"Error in scheduled task $name: ${ex.getMessage}", ex)
+        case Success(_)  =>
+          logger.info(s"Finished scheduled task: $name.")
+        case Failure(ex) =>
+          logger.error(s"Error in scheduled task $name: ${ex.getMessage}")
       }
+      FileService.evictIdleConnections()
     }
-    scheduler.scheduleAtFixedRate(runnable, initialDelay.toMillis, period.toMillis, TimeUnit.MILLISECONDS)
+    scheduler.scheduleWithFixedDelay(runnable, initialDelay.toMillis, period.toMillis, TimeUnit.MILLISECONDS)
   }
 
   private def registerShutdownHook(): Unit = {

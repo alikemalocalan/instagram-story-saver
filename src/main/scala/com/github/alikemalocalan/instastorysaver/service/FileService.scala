@@ -101,6 +101,16 @@ object FileService {
         false
     }
 
+  private val MinFreeSpaceBytes = 50L * 1024 * 1024 // 50 MB safety threshold for router storage
+
+  def evictIdleConnections(): Unit = {
+    try {
+      connectionPool.evictAll()
+    } catch {
+      case _: Throwable => ()
+    }
+  }
+
   def saveLocally(
       operations: Iterable[UrlOperation],
       destinationDir: String,
@@ -108,10 +118,22 @@ object FileService {
   ): Unit = {
     val baseDir = Paths.get(destinationDir)
 
+    // Ensure directory exists
+    if (!Files.exists(baseDir)) {
+      Files.createDirectories(baseDir)
+    }
+
+    // Safety check: Don't overflow router NAND / USB storage
+    Try(Files.getFileStore(baseDir).getUsableSpace) match {
+      case Success(usable) if usable < MinFreeSpaceBytes =>
+        logger.error(s"Low disk space alert on $destinationDir: only ${usable / (1024 * 1024)}MB free. Skipping download batch to protect device.")
+        return
+      case _ => ()
+    }
+
     val pendingOperations = operations.filter { op =>
       val targetPath = baseDir.resolve(op.fileFullPath)
       if (Files.exists(targetPath)) {
-        logger.info(s"File already exists: $targetPath")
         false
       } else {
         true
@@ -138,6 +160,7 @@ object FileService {
     } finally {
       executor.shutdown()
       executor.awaitTermination(30, TimeUnit.SECONDS)
+      evictIdleConnections()
     }
   }
 

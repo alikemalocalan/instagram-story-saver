@@ -251,3 +251,9 @@ hs_err_pid*
 # Used by previous versions of JEnv
 .jenv-version
 
+# Native binaries & local debug logs
+instastorysaver-*
+instastorysaver-router/
+hata.txt
+.bsp/
+

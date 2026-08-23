@@ -20,6 +20,7 @@ RUN native-image \
     --strict-image-heap \
     -H:+StripDebugInfo \
     -H:NativeLinkerOption=-Wl,--gc-sections \
+    -H:NativeLinkerOption=-Wl,--strip-all \
     -H:NativeLinkerOption=-Wl,-z,relro,-z,now \
     --enable-https \
     --enable-http \

@@ -1,13 +1,15 @@
 package com.github.alikemalocalan.instastorysaver.service
 
 import com.github.alikemalocalan.instastorysaver.model.UrlOperation
-import okhttp3.{ConnectionPool, OkHttpClient, Request}
+import okhttp3.{CipherSuite, ConnectionPool, ConnectionSpec, OkHttpClient, Protocol, Request, TlsVersion}
 import org.slf4j.{Logger, LoggerFactory}
 
 import java.io.InputStream
+import java.net.{InetAddress, Socket}
 import java.nio.channels.{Channels, FileChannel}
 import java.nio.file.{Files, Path, Paths, StandardCopyOption, StandardOpenOption}
 import java.util.concurrent.{Executors, TimeUnit}
+import javax.net.SocketFactory
 import scala.annotation.tailrec
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration.*
@@ -16,12 +18,54 @@ import scala.util.{Failure, Random, Success, Try, Using}
 object FileService {
   private val logger: Logger = LoggerFactory.getLogger(getClass)
 
-  private val connectionPool = new ConnectionPool(5, 1, TimeUnit.MINUTES)
+  /** Optimized SocketFactory enforcing TCP_NODELAY and 128KB buffer bursts for ARM64 network controllers.
+    */
+  private class FastSocketFactory extends SocketFactory {
+    private val delegate = SocketFactory.getDefault
+
+    override def createSocket(): Socket = configure(delegate.createSocket())
+    override def createSocket(host: String, port: Int): Socket = configure(delegate.createSocket(host, port))
+    override def createSocket(host: String, port: Int, localHost: InetAddress, localPort: Int): Socket =
+      configure(delegate.createSocket(host, port, localHost, localPort))
+    override def createSocket(host: InetAddress, port: Int): Socket = configure(delegate.createSocket(host, port))
+    override def createSocket(address: InetAddress, port: Int, localAddress: InetAddress, localPort: Int): Socket =
+      configure(delegate.createSocket(address, port, localAddress, localPort))
+
+    private def configure(socket: Socket): Socket = {
+      try {
+        socket.setTcpNoDelay(true)
+        socket.setReceiveBufferSize(128 * 1024)
+        socket.setSendBufferSize(128 * 1024)
+      } catch {
+        case _: Throwable => ()
+      }
+      socket
+    }
+  }
+
+  // Modern TLS 1.3 / 1.2 spec prioritizing hardware-accelerated ARMv8-A AES-GCM cipher suites
+  private val modernTlsSpec = new ConnectionSpec.Builder(ConnectionSpec.MODERN_TLS)
+    .tlsVersions(TlsVersion.TLS_1_3, TlsVersion.TLS_1_2)
+    .cipherSuites(
+      CipherSuite.TLS_AES_128_GCM_SHA256,
+      CipherSuite.TLS_AES_256_GCM_SHA384,
+      CipherSuite.TLS_CHACHA20_POLY1305_SHA256,
+      CipherSuite.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+      CipherSuite.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+    )
+    .build()
+
+  // Bounded connection pool for daily cron runs
+  private val connectionPool = new ConnectionPool(4, 30, TimeUnit.SECONDS)
 
   private val httpClient: OkHttpClient = new OkHttpClient.Builder()
     .connectionPool(connectionPool)
+    .connectionSpecs(java.util.List.of(modernTlsSpec, ConnectionSpec.CLEARTEXT))
+    .protocols(java.util.List.of(Protocol.HTTP_2, Protocol.HTTP_1_1))
+    .socketFactory(new FastSocketFactory())
     .connectTimeout(15, TimeUnit.SECONDS)
     .readTimeout(30, TimeUnit.SECONDS)
+    .retryOnConnectionFailure(true)
     .followRedirects(true)
     .build()
 

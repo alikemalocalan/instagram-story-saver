@@ -3,9 +3,9 @@
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
-# Stage 1: Build the Fat JAR with sbt
+# Stage 1: Build the Fat JAR with sbt natively on host architecture
 # ------------------------------------------------------------------------------
-FROM eclipse-temurin:21-jdk AS builder
+FROM --platform=$BUILDPLATFORM eclipse-temurin:21-jdk AS builder
 
 WORKDIR /build
 
@@ -37,7 +37,7 @@ WORKDIR /native
 COPY --from=builder /build/target/out/jvm/scala-3.3.8/instastorysaver/instastorysaver.jar ./app.jar
 
 RUN native-image \
-    -J-Xmx3g \
+    -J-Xmx5g \
     -H:+UnlockExperimentalVMOptions \
     --no-fallback \
     --report-unsupported-elements-at-runtime \

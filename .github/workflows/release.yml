@@ -30,7 +30,8 @@ jobs:
       - name: Build assembly Fat JAR
         run: |
           sbt assembly
-          cp target/out/jvm/scala-3.3.8/instastorysaver/instastorysaver.jar ./instastorysaver.jar
+          JAR_PATH=$(find target -type f -name "instastorysaver.jar" | head -n 1)
+          cp -f "$JAR_PATH" ./instastorysaver.jar
 
       - name: Publish GitHub Release (Fast)
         uses: softprops/action-gh-release@v2

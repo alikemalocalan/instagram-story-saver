@@ -32,26 +32,9 @@ jobs:
           sbt assembly
           cp target/out/jvm/scala-3.3.8/instastorysaver/instastorysaver.jar ./instastorysaver.jar
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build self-contained Linux ARM64 (armv8-a) bundle
-        run: |
-          docker buildx build \
-            --platform linux/arm64 \
-            --file Dockerfile.arm64 \
-            --output type=local,dest=. \
-            .
-          zip -r instastorysaver-linux-arm64.zip instastorysaver-linux-arm64
-
-      - name: Publish GitHub Release
+      - name: Publish GitHub Release (Fast)
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: |
-            instastorysaver.jar
-            instastorysaver-linux-arm64.zip
+          files: instastorysaver.jar
           generate_release_notes: true

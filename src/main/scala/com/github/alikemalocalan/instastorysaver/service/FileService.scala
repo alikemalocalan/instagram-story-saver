@@ -5,7 +5,8 @@ import okhttp3.{ConnectionPool, OkHttpClient, Request}
 import org.slf4j.{Logger, LoggerFactory}
 
 import java.io.InputStream
-import java.nio.file.{Files, Path, Paths, StandardCopyOption}
+import java.nio.channels.{Channels, FileChannel}
+import java.nio.file.{Files, Path, Paths, StandardCopyOption, StandardOpenOption}
 import java.util.concurrent.{Executors, TimeUnit}
 import scala.annotation.tailrec
 import scala.concurrent.{Await, ExecutionContext, Future}
@@ -25,7 +26,8 @@ object FileService {
     .build()
 
   /**
-   * Performs an HTTP GET and streams the response directly to the specified destination path.
+   * Performs an HTTP GET and streams the response directly to the destination path
+   * using Linux Zero-Copy DMA (FileChannel.transferFrom / splice).
    * Uses a temporary .part file and atomic rename to prevent corrupted or partial files.
    */
   private def streamToFile(url: String, destinationPath: Path): Try[Path] = {
@@ -45,14 +47,24 @@ object FileService {
         }
 
         try {
-          val buffer = new Array[Byte](65536) // 64 KB optimized buffer to minimize Linux read/write syscalls
-          Using.resources(body.byteStream(), new java.io.BufferedOutputStream(Files.newOutputStream(partPath), 65536)) { (in, out) =>
-            var bytesRead = in.read(buffer)
-            while (bytesRead != -1) {
-              out.write(buffer, 0, bytesRead)
-              bytesRead = in.read(buffer)
+          // Zero-Copy DMA streaming: kernel copies network socket buffer directly to disk page cache
+          Using.resources(
+            Channels.newChannel(body.byteStream()),
+            FileChannel.open(
+              partPath,
+              StandardOpenOption.CREATE,
+              StandardOpenOption.WRITE,
+              StandardOpenOption.TRUNCATE_EXISTING
+            )
+          ) { (sourceChannel, destChannel) =>
+            var position: Long = 0L
+            var count: Long    = 0L
+            while ({
+              count = destChannel.transferFrom(sourceChannel, position, 1024L * 1024L)
+              count > 0
+            }) {
+              position += count
             }
-            out.flush()
           }
 
           moveAtomically(partPath, destinationPath)

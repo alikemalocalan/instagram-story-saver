@@ -9,7 +9,7 @@ libraryDependencies ++= Seq(
   "com.github.instagram4j.instagram4j" % "web"          % "3.0",
   "com.typesafe"                       % "config"       % "1.4.9",
   "com.lihaoyi"                        %% "mainargs"    % "0.7.8",
-  "org.slf4j"                          % "slf4j-simple" % "2.0.17"
+  "org.slf4j"                          % "slf4j-simple" % "2.0.18"
 )
 
 Compile / mainClass := Some("com.github.alikemalocalan.instastorysaver.StorySaverScheduler")
@@ -37,6 +37,8 @@ graalVMNativeImageOptions ++= Seq(
   "-R:MinHeapSize=16m",
   "-R:MaxHeapSize=64m",
   "--strict-image-heap",
+  "-H:NativeLinkerOption=-Wl,--gc-sections",
+  "-H:NativeLinkerOption=-Wl,-z,relro,-z,now",
   "--enable-https",
   "--enable-http",
   "--install-exit-handlers",

@@ -1,8 +1,11 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Building self-contained native ARM64 (armv8-a) bundle..."
+echo "📦 1/2 Building Fat JAR with sbt..."
+sbt assembly
+cp target/out/jvm/scala-3.3.8/instastorysaver/instastorysaver.jar ./instastorysaver.jar
 
+echo "🚀 2/2 Building native ARM64 bundle with Docker..."
 DOCKER_BUILDKIT=1 docker build \
   --platform linux/arm64 \
   --file Dockerfile.arm64 \

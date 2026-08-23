@@ -44,7 +44,20 @@ chmod +x instastorysaver-linux-arm64/instastorysaver instastorysaver-linux-arm64
   --username "your_username" \
   --session-id "YOUR_SESSION_ID" \
   --csrf-token "YOUR_CSRF_TOKEN" \
-  --destination-folder "/path/to/stories"
+  --destination-folder "/path/to/stories" \
+  --include-highlights \
+  --include-feeds
+```
+
+---
+
+## ⏰ 24-Hour Autonomous Cron Setup (Linux / OpenWrt)
+
+To run automatically once every 24 hours (e.g. daily at 02:00 AM):
+
+```bash
+# Add to crontab
+0 2 * * * /path/to/instastorysaver --destination-folder "/path/to/stories" --username "your_username" --session-id "YOUR_SESSION_ID" --csrf-token "YOUR_CSRF_TOKEN" >> /tmp/instastorysaver.log 2>&1
 ```
 
 ---
@@ -53,7 +66,6 @@ chmod +x instastorysaver-linux-arm64/instastorysaver instastorysaver-linux-arm64
 
 Alternatively, configure via environment variables or `application.conf`:
 - `USERNAME`
-- `PASSWORD`
 - `SESSION_ID`
 - `CSRF_TOKEN`
 - `DOWNLOAD_FOLDER`

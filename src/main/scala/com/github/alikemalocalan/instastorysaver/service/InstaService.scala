@@ -10,19 +10,16 @@ import scala.util.{Failure, Success, Try}
 object InstaService {
   private val logger: Logger = LoggerFactory.getLogger(getClass)
 
-  def login(userName: String, password: String): Instagram4j =
-    LoginService.login(userName, password)
-
   def fromSession(sessionId: String, csrfToken: String, username: String = ""): Instagram4j =
     LoginService.fromSession(sessionId, csrfToken, username)
-
 
   def getFollowingUsers(using client: Instagram4j): LazyList[User] =
     Try {
       val selfPk = client.session.split("[:%]").headOption.getOrElse("")
       logger.info(s"Fetching following users for account ID $selfPk...")
 
-      val paginator = new com.instagram4j.web.paginators.ProfilePaginator(client.session, client.crsf, selfPk, "following", null)
+      val paginator =
+        new com.instagram4j.web.paginators.ProfilePaginator(client.session, client.crsf, selfPk, "following", null)
       val seenPks = scala.collection.mutable.Set[String]()
 
       paginator.asScala.to(LazyList).takeWhile(!_.isEmpty).flatMap { pageList =>
@@ -62,12 +59,17 @@ object InstaService {
       val vars = new android.org.json.JSONObject()
       vars.put("reel_ids_arr", new android.org.json.JSONArray(s"""["${user.userId}"]"""))
 
-      val res = com.instagram4j.web.Utils.postGraphQL(client.session, com.instagram4j.web.Constants.GraphQl.USER_STORY, vars)
-      val reels = Option(res.optJSONObject("xdt_api__v1__feed__reels_media")).flatMap(o => Option(o.optJSONArray("reels_media")))
-      val stories = reels.filter(!_.isEmpty).map { reelArray =>
-        val reel = reelArray.getJSONObject(0)
-        Option(reel.optJSONArray("items")).map(extractMediaItems).getOrElse(List.empty)
-      }.getOrElse(List.empty)
+      val res =
+        com.instagram4j.web.Utils.postGraphQL(client.session, com.instagram4j.web.Constants.GraphQl.USER_STORY, vars)
+      val reels =
+        Option(res.optJSONObject("xdt_api__v1__feed__reels_media")).flatMap(o => Option(o.optJSONArray("reels_media")))
+      val stories = reels
+        .filter(!_.isEmpty)
+        .map { reelArray =>
+          val reel = reelArray.getJSONObject(0)
+          Option(reel.optJSONArray("items")).map(extractMediaItems).getOrElse(List.empty)
+        }
+        .getOrElse(List.empty)
 
       UserStories(user, stories)
     } match {
@@ -82,16 +84,22 @@ object InstaService {
       val variables = new android.org.json.JSONObject()
       variables.put("user_id", user.userId)
 
-      val response = com.instagram4j.web.Utils.postGraphQL(client.session, com.instagram4j.web.Constants.GraphQl.HIGHLIGHTS, variables)
+      val response = com.instagram4j.web.Utils
+        .postGraphQL(client.session, com.instagram4j.web.Constants.GraphQl.HIGHLIGHTS, variables)
       val edges = Option(response.optJSONObject("highlights")).flatMap(h => Option(h.optJSONArray("edges")))
-      val highlights = edges.filter(!_.isEmpty).map { edgeArray =>
-        val ids = (0 until edgeArray.length()).map { i =>
-          edgeArray.getJSONObject(i).getJSONObject("node").getString("id")
-        }.toArray
-        Option(com.instagram4j.web.endpoints.profile.Story.getActualStory(ids, client.session))
-          .map(_.asScala.toList.map(s => HighLightStoryMedia(s.download_url, System.currentTimeMillis(), "highlight")))
-          .getOrElse(List.empty)
-      }.getOrElse(List.empty)
+      val highlights = edges
+        .filter(!_.isEmpty)
+        .map { edgeArray =>
+          val ids = (0 until edgeArray.length()).map { i =>
+            edgeArray.getJSONObject(i).getJSONObject("node").getString("id")
+          }.toArray
+          Option(com.instagram4j.web.endpoints.profile.Story.getActualStory(ids, client.session))
+            .map(
+              _.asScala.toList.map(s => HighLightStoryMedia(s.download_url, System.currentTimeMillis(), "highlight"))
+            )
+            .getOrElse(List.empty)
+        }
+        .getOrElse(List.empty)
 
       UserHighLightStoryMedias(user, highlights)
     } match {
@@ -103,7 +111,8 @@ object InstaService {
 
   def getUserPosts(user: User, maxPages: Int = 1)(using client: Instagram4j): UserFeedMedias =
     Try {
-      val paginator = new com.instagram4j.web.paginators.PostPaginator(client.session, client.crsf, user.folderName, null)
+      val paginator =
+        new com.instagram4j.web.paginators.PostPaginator(client.session, client.crsf, user.folderName, null)
       val medias = paginator.asScala
         .take(maxPages)
         .flatMap { postList =>
@@ -143,48 +152,58 @@ object InstaService {
           if (pk.nonEmpty) Some(pk -> username) else None
         }.toMap
 
-        val allUserIds = (0 until tray.length()).flatMap { i =>
-          val trayItem = tray.getJSONObject(i)
-          val userObj = Option(trayItem.optJSONObject("user"))
-          val pk = userObj.map(_.optString("pk", "")).filter(_.nonEmpty)
-          val id = Option(trayItem.optString("id", "")).filter(_.nonEmpty)
-          pk.orElse(id)
-        }.distinct.toList
+        val allUserIds = (0 until tray.length())
+          .flatMap { i =>
+            val trayItem = tray.getJSONObject(i)
+            val userObj = Option(trayItem.optJSONObject("user"))
+            val pk = userObj.map(_.optString("pk", "")).filter(_.nonEmpty)
+            val id = Option(trayItem.optString("id", "")).filter(_.nonEmpty)
+            pk.orElse(id)
+          }
+          .distinct
+          .toList
 
         // Query GraphQL for all users in tray in batches of 15 to get their complete reel (both seen & unseen)
-        val userStoriesList = allUserIds.grouped(15).flatMap { batchIds =>
-          Try {
-            val reelIdsArray = new android.org.json.JSONArray()
-            batchIds.foreach(reelIdsArray.put)
+        val userStoriesList = allUserIds
+          .grouped(15)
+          .flatMap { batchIds =>
+            Try {
+              val reelIdsArray = new android.org.json.JSONArray()
+              batchIds.foreach(reelIdsArray.put)
 
-            val vars = new android.org.json.JSONObject()
-            vars.put("initial_reel_id", batchIds.head)
-            vars.put("reel_ids", reelIdsArray)
-            vars.put("first", 200) // Fetch all active stories per user batch
+              val vars = new android.org.json.JSONObject()
+              vars.put("initial_reel_id", batchIds.head)
+              vars.put("reel_ids", reelIdsArray)
+              vars.put("first", 200) // Fetch all active stories per user batch
 
-            val response = com.instagram4j.web.Utils.postGraphQL(client.session, com.instagram4j.web.Constants.GraphQl.STORY, vars)
-            val edges = Option(response.optJSONObject("xdt_api__v1__feed__reels_media__connection"))
-              .flatMap(conn => Option(conn.optJSONArray("edges")))
-              .getOrElse(new android.org.json.JSONArray())
+              val response =
+                com.instagram4j.web.Utils.postGraphQL(client.session, com.instagram4j.web.Constants.GraphQl.STORY, vars)
+              val edges = Option(response.optJSONObject("xdt_api__v1__feed__reels_media__connection"))
+                .flatMap(conn => Option(conn.optJSONArray("edges")))
+                .getOrElse(new android.org.json.JSONArray())
 
-            (0 until edges.length()).flatMap { i =>
-              val node = edges.getJSONObject(i).getJSONObject("node")
-              val nodeUser = Option(node.optJSONObject("user"))
-              val userId = nodeUser.map(_.optString("pk", "")).filter(_.nonEmpty).getOrElse(node.optString("id", ""))
-              val username = nodeUser.map(_.optString("username", "")).filter(_.nonEmpty).getOrElse(userMap.getOrElse(userId, userId))
-              val user = User(username, userId)
+              (0 until edges.length()).flatMap { i =>
+                val node = edges.getJSONObject(i).getJSONObject("node")
+                val nodeUser = Option(node.optJSONObject("user"))
+                val userId = nodeUser.map(_.optString("pk", "")).filter(_.nonEmpty).getOrElse(node.optString("id", ""))
+                val username = nodeUser
+                  .map(_.optString("username", ""))
+                  .filter(_.nonEmpty)
+                  .getOrElse(userMap.getOrElse(userId, userId))
+                val user = User(username, userId)
 
-              val items = Option(node.optJSONArray("items")).getOrElse(new android.org.json.JSONArray())
-              val medias = extractMediaItems(items)
-              if (medias.nonEmpty) Some(UserStories(user, medias)) else None
+                val items = Option(node.optJSONArray("items")).getOrElse(new android.org.json.JSONArray())
+                val medias = extractMediaItems(items)
+                if (medias.nonEmpty) Some(UserStories(user, medias)) else None
+              }
+            } match {
+              case Success(batchStories) => batchStories
+              case Failure(ex) =>
+                logger.warn(s"Error querying story batch: ${ex.getMessage}")
+                List.empty[UserStories]
             }
-          } match {
-            case Success(batchStories) => batchStories
-            case Failure(ex) =>
-              logger.warn(s"Error querying story batch: ${ex.getMessage}")
-              List.empty[UserStories]
           }
-        }.toList
+          .toList
 
         userStoriesList
       }
@@ -271,9 +290,8 @@ object InstaService {
         savedHighlightsCount += userHighlights.medias.size
       }
     }
-    logger.info(s"Finished saving highlights. Checked $processedCount users, saved $savedHighlightsCount highlight media files.")
+    logger.info(
+      s"Finished saving highlights. Checked $processedCount users, saved $savedHighlightsCount highlight media files."
+    )
   }
 }
-
-
-

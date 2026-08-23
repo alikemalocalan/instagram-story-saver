@@ -6,13 +6,10 @@ import org.slf4j.{Logger, LoggerFactory}
 object LoginService {
   private val logger: Logger = LoggerFactory.getLogger(getClass)
 
-  def login(username: String, password: String): Instagram4j = {
-    logger.info(s"Logging in as $username...")
-    new Instagram4j(username, password)
-  }
-
   def fromSession(sessionId: String, csrfToken: String, username: String = ""): Instagram4j = {
-    logger.info(s"Initializing Instagram client with session cookies for ${if (username.nonEmpty) username else "user"}...")
+    logger.info(
+      s"Initializing Instagram client with session cookies for ${if (username.nonEmpty) username else "user"}..."
+    )
     val client = Instagram4j.getInstance(sessionId.trim, csrfToken.trim)
     if (username.nonEmpty) {
       client.username = username
@@ -20,8 +17,3 @@ object LoginService {
     client
   }
 }
-
-
-
-
-

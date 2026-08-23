@@ -25,14 +25,13 @@ object FileService {
     .followRedirects(true)
     .build()
 
-  /**
-   * Performs an HTTP GET and streams the response directly to the destination path
-   * using Linux Zero-Copy DMA (FileChannel.transferFrom / splice).
-   * Uses a temporary .part file and atomic rename to prevent corrupted or partial files.
-   */
+  /** Performs an HTTP GET and streams the response directly to the destination path using Linux Zero-Copy DMA
+    * (FileChannel.transferFrom / splice). Uses a temporary .part file and atomic rename to prevent corrupted or partial
+    * files.
+    */
   private def streamToFile(url: String, destinationPath: Path): Try[Path] = {
     val partPath = destinationPath.resolveSibling(s"${destinationPath.getFileName}.part")
-    val request  = new Request.Builder().url(url).build()
+    val request = new Request.Builder().url(url).build()
 
     Try {
       Option(destinationPath.getParent).foreach(Files.createDirectories(_))
@@ -58,7 +57,7 @@ object FileService {
             )
           ) { (sourceChannel, destChannel) =>
             var position: Long = 0L
-            var count: Long    = 0L
+            var count: Long = 0L
             while ({
               count = destChannel.transferFrom(sourceChannel, position, 1024L * 1024L)
               count > 0
@@ -76,9 +75,8 @@ object FileService {
     }
   }
 
-  /**
-   * Attempts atomic move first, falling back to standard replace if cross-device move occurs.
-   */
+  /** Attempts atomic move first, falling back to standard replace if cross-device move occurs.
+    */
   private def moveAtomically(source: Path, destination: Path): Unit =
     try {
       Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
@@ -87,9 +85,8 @@ object FileService {
         Files.move(source, destination, StandardCopyOption.REPLACE_EXISTING)
     }
 
-  /**
-   * Functional retry mechanism with exponential backoff and jitter.
-   */
+  /** Functional retry mechanism with exponential backoff and jitter.
+    */
   @tailrec
   private def retryWithBackoff[T](attemptsLeft: Int, maxAttempts: Int = 3)(action: => Try[T]): Try[T] =
     action match {
@@ -97,15 +94,16 @@ object FileService {
       case failure @ Failure(ex) if attemptsLeft > 0 =>
         val attemptNumber = maxAttempts - attemptsLeft + 1
         val backoffMs = (math.pow(2, attemptNumber) * 200 + Random.nextInt(200)).toLong
-        logger.warn(s"Attempt $attemptNumber failed (${ex.getMessage}). Retrying in ${backoffMs}ms ($attemptsLeft attempts left)...")
+        logger.warn(
+          s"Attempt $attemptNumber failed (${ex.getMessage}). Retrying in ${backoffMs}ms ($attemptsLeft attempts left)..."
+        )
         Thread.sleep(backoffMs)
         retryWithBackoff(attemptsLeft - 1, maxAttempts)(action)
       case failure @ Failure(_) => failure
     }
 
-  /**
-   * Downloads a media URL to the target path with automated retries.
-   */
+  /** Downloads a media URL to the target path with automated retries.
+    */
   private def downloadFile(url: String, targetPath: Path, maxRetries: Int = 3): Boolean =
     retryWithBackoff(attemptsLeft = maxRetries, maxAttempts = maxRetries) {
       streamToFile(url, targetPath)
@@ -143,7 +141,9 @@ object FileService {
     // Safety check: Don't overflow storage
     Try(Files.getFileStore(baseDir).getUsableSpace) match {
       case Success(usable) if usable < MinFreeSpaceBytes =>
-        logger.error(s"Low disk space alert on $destinationDir: only ${usable / (1024 * 1024)}MB free. Skipping download batch to protect device.")
+        logger.error(
+          s"Low disk space alert on $destinationDir: only ${usable / (1024 * 1024)}MB free. Skipping download batch to protect device."
+        )
         return
       case _ => ()
     }
@@ -190,6 +190,3 @@ object FileService {
     }
   }
 }
-
-
-

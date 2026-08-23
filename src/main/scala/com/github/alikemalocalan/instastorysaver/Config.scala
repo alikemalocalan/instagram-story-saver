@@ -8,8 +8,6 @@ trait Config {
 
   protected val username: String =
     if (config.hasPath("username")) config.getString("username") else ""
-  protected val password: String =
-    if (config.hasPath("password")) config.getString("password") else ""
   protected val sessionId: Option[String] =
     if (config.hasPath("session-id") && config.getString("session-id").trim.nonEmpty)
       Some(config.getString("session-id").trim)
@@ -37,7 +35,4 @@ trait Config {
 
   // Aliases for compatibility
   protected def userName: String = username
-  protected def passWord: String = password
 }
-
-

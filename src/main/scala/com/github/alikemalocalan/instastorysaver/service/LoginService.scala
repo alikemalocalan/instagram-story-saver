@@ -13,13 +13,15 @@ object LoginService {
 
   def fromSession(sessionId: String, csrfToken: String, username: String = ""): Instagram4j = {
     logger.info(s"Initializing Instagram client with session cookies for ${if (username.nonEmpty) username else "user"}...")
-    val client = Instagram4j.getInstance(sessionId, csrfToken)
+    val client = Instagram4j.getInstance(sessionId.trim, csrfToken.trim)
     if (username.nonEmpty) {
       client.username = username
     }
     client
   }
 }
+
+
 
 
 

@@ -23,6 +23,18 @@ trait Config {
     if (config.hasPath("download-folder")) config.getString("download-folder")
     else s"${System.getProperty("user.home")}${File.separator}instagram-stories"
 
+  protected val maxConcurrentDownloads: Int =
+    if (config.hasPath("max-concurrent-downloads")) config.getInt("max-concurrent-downloads")
+    else 3
+
+  protected val requestDelayMs: Long =
+    if (config.hasPath("request-delay-ms")) config.getLong("request-delay-ms")
+    else 350L
+
+  protected val retryCount: Int =
+    if (config.hasPath("retry-count")) config.getInt("retry-count")
+    else 3
+
   // Aliases for compatibility
   protected def userName: String = username
   protected def passWord: String = password

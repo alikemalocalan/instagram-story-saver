@@ -23,23 +23,33 @@ object StorySaverCLI {
       @arg(name = "csrf-token", doc = "Instagram csrftoken cookie value (recommended)")
       csrfToken: String = "",
       @arg(name = "destination-folder", doc = "Destination folder path for downloaded stories")
-      destinationFolder: String = s"${FileUtils.getUserDirectory.getAbsoluteFile}${File.separator}instagram-stories"
+      destinationFolder: String = s"${FileUtils.getUserDirectory.getAbsoluteFile}${File.separator}instagram-stories",
+      @arg(name = "concurrency", doc = "Maximum concurrent downloads (default: 3)")
+      concurrency: Int = 3,
+      @arg(name = "delay-ms", doc = "Request delay in milliseconds between users (default: 350)")
+      delayMs: Long = 350L
   ): Unit = {
-    Try {
-      given client: Instagram4j =
-        if (sessionId.trim.nonEmpty && csrfToken.trim.nonEmpty) {
-          InstaService.fromSession(sessionId.trim, csrfToken.trim, username)
-        } else if (password.nonEmpty) {
-          InstaService.login(username, password)
-        } else {
-          throw new IllegalArgumentException("Either password or both session-id and csrf-token must be provided.")
-        }
+    try {
+      Try {
+        val clientInstance: Instagram4j =
+          if (sessionId.trim.nonEmpty && csrfToken.trim.nonEmpty) {
+            InstaService.fromSession(sessionId.trim, csrfToken.trim, username)
+          } else if (password.nonEmpty) {
+            InstaService.login(username, password)
+          } else {
+            throw new IllegalArgumentException("Either password or both session-id and csrf-token must be provided.")
+          }
 
-      logger.info("Starting saving stories...")
-      InstaService.saveStories(destinationFolder)
-    } match {
-      case Success(_)  => logger.info("Successfully finished saving stories.")
-      case Failure(ex) => logger.error(s"Error saving stories: ${ex.getMessage}", ex)
+        given client: Instagram4j = clientInstance
+
+        logger.info(s"Starting story save pipeline for @${username}...")
+        InstaService.saveStories(destinationFolder, concurrency, delayMs)
+      } match {
+        case Success(_)  => logger.info("Successfully finished saving stories.")
+        case Failure(ex) => logger.error(s"Error saving stories: ${ex.getMessage}", ex)
+      }
+    } finally {
+      com.github.alikemalocalan.instastorysaver.service.FileService.shutdown()
     }
   }
 

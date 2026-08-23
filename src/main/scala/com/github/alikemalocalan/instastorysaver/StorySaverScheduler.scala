@@ -1,16 +1,26 @@
 package com.github.alikemalocalan.instastorysaver
 
-import com.github.alikemalocalan.instastorysaver.service.InstaService
+import com.github.alikemalocalan.instastorysaver.service.{FileService, InstaService}
 import com.instagram4j.web.Instagram4j
 import org.apache.commons.logging.{Log, LogFactory}
 
-import java.util.{Timer, TimerTask}
+import java.util.concurrent.{Executors, ScheduledExecutorService, ThreadFactory, TimeUnit}
+import java.util.concurrent.atomic.AtomicInteger
 import scala.concurrent.duration.*
 import scala.util.{Failure, Success, Try}
 
 object StorySaverScheduler extends Config {
   private val logger: Log = LogFactory.getLog(getClass)
-  private val timer       = new Timer()
+
+  private val threadCounter = new AtomicInteger(1)
+  private val scheduler: ScheduledExecutorService = Executors.newScheduledThreadPool(
+    2,
+    (r: Runnable) => {
+      val t = new Thread(r, s"story-scheduler-${threadCounter.getAndIncrement()}")
+      t.setDaemon(true)
+      t
+    }
+  )
 
   given client: Instagram4j = (sessionId, csrfToken) match {
     case (Some(session), Some(csrf)) =>
@@ -19,35 +29,59 @@ object StorySaverScheduler extends Config {
       InstaService.login(username, password)
   }
 
-
   def main(args: Array[String]): Unit = {
+    registerShutdownHook()
+
     scheduleTask("Stories", initialDelay = 3.seconds, period = 24.hours) {
-      InstaService.saveStories(downloadFolder)
+      InstaService.saveStories(downloadFolder, maxConcurrentDownloads, requestDelayMs)
     }
 
     scheduleTask("Highlights", initialDelay = 10.minutes, period = 168.hours) {
-      InstaService.saveUserHighLightStories(downloadFolder)
+      InstaService.saveUserHighLightStories(downloadFolder, maxConcurrentDownloads, requestDelayMs)
     }
 
     scheduleTask("Feeds", initialDelay = 5.minutes, period = 168.hours) {
-      InstaService.saveFeeds(downloadFolder)
+      InstaService.saveFeeds(downloadFolder, maxConcurrentDownloads, requestDelayMs)
+    }
+
+    logger.info("StorySaverScheduler running. Press CTRL+C to terminate.")
+    // Keep main thread alive
+    try {
+      Thread.currentThread().join()
+    } catch {
+      case _: InterruptedException =>
+        logger.info("Scheduler main thread interrupted. Exiting...")
     }
   }
 
   private def scheduleTask(name: String, initialDelay: FiniteDuration, period: FiniteDuration)(
       action: => Unit
   ): Unit = {
-    val task = new TimerTask {
-      override def run(): Unit =
-        Try {
-          logger.info(s"Starting saving $name...")
-          action
-        } match {
-          case Success(_)  => logger.info(s"Successfully finished saving $name.")
-          case Failure(ex) => logger.error(s"Error while saving $name: ${ex.getMessage}", ex)
-        }
+    val runnable: Runnable = () => {
+      Try {
+        logger.info(s"Starting scheduled task: $name...")
+        action
+      } match {
+        case Success(_)  => logger.info(s"Finished scheduled task: $name.")
+        case Failure(ex) => logger.error(s"Error in scheduled task $name: ${ex.getMessage}", ex)
+      }
     }
-    timer.scheduleAtFixedRate(task, initialDelay.toMillis, period.toMillis)
+    scheduler.scheduleAtFixedRate(runnable, initialDelay.toMillis, period.toMillis, TimeUnit.MILLISECONDS)
+  }
+
+  private def registerShutdownHook(): Unit = {
+    sys.addShutdownHook {
+      logger.info("Shutting down StorySaverScheduler...")
+      try {
+        scheduler.shutdown()
+        scheduler.awaitTermination(10, TimeUnit.SECONDS)
+        FileService.shutdown()
+      } catch {
+        case _: Throwable => ()
+      }
+      logger.info("Shutdown completed successfully.")
+    }
   }
 }
+
 

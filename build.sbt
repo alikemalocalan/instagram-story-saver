@@ -1,5 +1,5 @@
 name := "instastorysaver"
-version := "0.2.0"
+version := "1.0.0"
 organization := "com.github.alikemalocalan"
 scalaVersion := "3.3.8"
 
@@ -9,7 +9,7 @@ libraryDependencies ++= Seq(
   "com.github.instagram4j.instagram4j" % "web"          % "3.0",
   "com.typesafe"                       % "config"       % "1.4.9",
   "com.lihaoyi"                        %% "mainargs"    % "0.7.8",
-  "org.slf4j"                          % "slf4j-simple" % "2.0.18"
+  "org.slf4j"                          % "slf4j-simple" % "2.0.17"
 )
 
 Compile / mainClass := Some("com.github.alikemalocalan.instastorysaver.StorySaverScheduler")
@@ -40,7 +40,7 @@ graalVMNativeImageOptions ++= Seq(
   "--enable-https",
   "--enable-http",
   "--install-exit-handlers",
-  "--initialize-at-build-time=org.slf4j.LoggerFactory,org.slf4j.simple.SimpleLoggerFactory,org.slf4j.simple.SimpleLogger,com.typesafe.config.ConfigFactory,android.org.json.JSONObject,okio.ByteString,okio.SegmentPool"
+  "--initialize-at-build-time=org.slf4j,com.typesafe.config,android.org.json,okio"
 )
 
 assembly / assemblyJarName := s"${name.value}.jar"

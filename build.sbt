@@ -25,7 +25,7 @@ lazy val root = project
     name := "instastorysaver",
     resolvers += "jitpack" at "https://jitpack.io",
     libraryDependencies ++= Seq(
-      "com.github.instagram4j.instagram4j" % "web" % instagram4jVersion,
+      ("com.github.instagram4j.instagram4j" % "web" % instagram4jVersion).exclude("com.squareup.okhttp3", "okhttp"),
       "com.fasterxml.jackson.core" % "jackson-databind" % jacksonVersion,
       "com.fasterxml.jackson.core" % "jackson-core" % jacksonVersion,
       "com.fasterxml.jackson.core" % "jackson-annotations" % jacksonAnnotationsVersion,
@@ -88,6 +88,7 @@ lazy val root = project
       case PathList("META-INF", "proguard", _*)                                                => MergeStrategy.discard
       case PathList("META-INF", "MANIFEST.MF" | "INDEX.LIST" | "DEPENDENCIES")                 => MergeStrategy.discard
       case PathList("module-info.class")                                                       => MergeStrategy.discard
+      case PathList("okhttp3", _*)                                                             => MergeStrategy.first
       case path if path.endsWith(".SF") || path.endsWith(".DSA") || path.endsWith(".RSA")      => MergeStrategy.discard
       case path if path.endsWith(".kotlin_module") || path.endsWith(".kotlin_metadata")        => MergeStrategy.discard
       case path if path.endsWith(".kotlin_builtins")                                           => MergeStrategy.first

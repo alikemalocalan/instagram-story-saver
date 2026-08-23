@@ -9,8 +9,8 @@ libraryDependencies ++= Seq(
   "com.github.instagram4j.instagram4j" % "web"             % "3.0",
   "com.typesafe"                       % "config"          % "1.4.9",
   "commons-io"                         % "commons-io"      % "2.22.0",
-  "commons-logging"                    % "commons-logging" % "1.4.0",
-  "com.lihaoyi"                        %% "mainargs"       % "0.7.8"
+  "com.lihaoyi"                        %% "mainargs"       % "0.7.8",
+  "ch.qos.logback"                     % "logback-classic" % "1.6.3"
 )
 
 Compile / mainClass := Some("com.github.alikemalocalan.instastorysaver.StorySaverScheduler")
@@ -36,6 +36,7 @@ assembly / assemblyMergeStrategy := {
   case PathList("META-INF", "versions", _*)             => MergeStrategy.first
   case PathList("META-INF", "okio.kotlin_module")       => MergeStrategy.first
   case PathList("META-INF", "MANIFEST.MF")              => MergeStrategy.discard
+  case PathList("META-INF", "INDEX.LIST")               => MergeStrategy.discard
   case PathList("META-INF", "LICENSE" | "LICENSE.txt")  => MergeStrategy.discard
   case PathList("META-INF", "NOTICE" | "NOTICE.txt")    => MergeStrategy.discard
   case "module-info.class"                              => MergeStrategy.last

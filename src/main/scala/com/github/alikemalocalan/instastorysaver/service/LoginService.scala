@@ -1,10 +1,10 @@
 package com.github.alikemalocalan.instastorysaver.service
 
 import com.instagram4j.web.Instagram4j
-import org.apache.commons.logging.{Log, LogFactory}
+import org.slf4j.{Logger, LoggerFactory}
 
 object LoginService {
-  private val logger: Log = LogFactory.getLog(getClass)
+  private val logger: Logger = LoggerFactory.getLogger(getClass)
 
   def login(username: String, password: String): Instagram4j = {
     logger.info(s"Logging in as $username...")

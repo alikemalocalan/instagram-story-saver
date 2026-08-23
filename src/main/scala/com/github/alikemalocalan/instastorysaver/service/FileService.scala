@@ -2,7 +2,7 @@ package com.github.alikemalocalan.instastorysaver.service
 
 import com.github.alikemalocalan.instastorysaver.model.UrlOperation
 import okhttp3.{ConnectionPool, OkHttpClient, Request}
-import org.apache.commons.logging.{Log, LogFactory}
+import org.slf4j.{Logger, LoggerFactory}
 
 import java.io.InputStream
 import java.nio.file.{Files, Path, Paths, StandardCopyOption}
@@ -13,7 +13,7 @@ import scala.concurrent.duration.*
 import scala.util.{Failure, Random, Success, Try, Using}
 
 object FileService {
-  private val logger: Log = LogFactory.getLog(getClass)
+  private val logger: Logger = LoggerFactory.getLogger(getClass)
 
   private val connectionPool = new ConnectionPool(5, 1, TimeUnit.MINUTES)
 
@@ -89,7 +89,7 @@ object FileService {
   /**
    * Downloads a media URL to the target path with automated retries.
    */
-  def downloadFile(url: String, targetPath: Path, maxRetries: Int = 3): Boolean =
+  private def downloadFile(url: String, targetPath: Path, maxRetries: Int = 3): Boolean =
     retryWithBackoff(attemptsLeft = maxRetries, maxAttempts = maxRetries) {
       streamToFile(url, targetPath)
     } match {

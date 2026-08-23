@@ -1,16 +1,15 @@
 package com.github.alikemalocalan.instastorysaver
 
-import com.github.alikemalocalan.instastorysaver.service.InstaService
+import com.github.alikemalocalan.instastorysaver.service.{FileService, InstaService}
 import com.instagram4j.web.Instagram4j
 import mainargs.{ParserForMethods, arg, main}
-import org.apache.commons.io.FileUtils
-import org.apache.commons.logging.{Log, LogFactory}
+import org.slf4j.{Logger, LoggerFactory}
 
 import java.io.File
 import scala.util.{Failure, Success, Try}
 
 object StorySaverCLI {
-  private val logger: Log = LogFactory.getLog(getClass)
+  private val logger: Logger = LoggerFactory.getLogger(getClass)
 
   @main
   def run(
@@ -23,7 +22,7 @@ object StorySaverCLI {
       @arg(name = "csrf-token", doc = "Instagram csrftoken cookie value (recommended)")
       csrfToken: String = "",
       @arg(name = "destination-folder", doc = "Destination folder path for downloaded stories")
-      destinationFolder: String = s"${FileUtils.getUserDirectory.getAbsoluteFile}${File.separator}instagram-stories",
+      destinationFolder: String = s"${sys.props.getOrElse("user.home", ".")}${File.separator}instagram-stories",
       @arg(name = "concurrency", doc = "Maximum concurrent downloads (default: 3)")
       concurrency: Int = 3,
       @arg(name = "delay-ms", doc = "Request delay in milliseconds between users (default: 350)")

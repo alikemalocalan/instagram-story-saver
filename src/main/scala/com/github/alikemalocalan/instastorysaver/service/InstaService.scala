@@ -2,13 +2,13 @@ package com.github.alikemalocalan.instastorysaver.service
 
 import com.github.alikemalocalan.instastorysaver.model.*
 import com.instagram4j.web.Instagram4j
-import org.apache.commons.logging.{Log, LogFactory}
+import org.slf4j.{Logger, LoggerFactory}
 
 import scala.jdk.CollectionConverters.*
 import scala.util.{Failure, Success, Try}
 
 object InstaService {
-  private val logger: Log = LogFactory.getLog(getClass)
+  private val logger: Logger = LoggerFactory.getLogger(getClass)
 
   def login(userName: String, password: String): Instagram4j =
     LoginService.login(userName, password)
@@ -23,9 +23,16 @@ object InstaService {
       logger.info(s"Fetching following users for account ID $selfPk...")
 
       val paginator = new com.instagram4j.web.paginators.ProfilePaginator(client.session, client.crsf, selfPk, "following", null)
-      paginator.asScala.to(LazyList).zipWithIndex.flatMap { case (pageList, pageIdx) =>
-        logger.info(s"Loaded followings page ${pageIdx + 1} (${pageList.size} users)...")
-        pageList.asScala.map(profile => User(profile.username, profile.pk))
+      val seenPks = scala.collection.mutable.Set[String]()
+
+      paginator.asScala.to(LazyList).takeWhile(!_.isEmpty).flatMap { pageList =>
+        val newProfiles = pageList.asScala.filter(p => seenPks.add(p.pk)).toList
+        if (newProfiles.isEmpty) {
+          LazyList.empty[User]
+        } else {
+          logger.info(s"Loaded ${newProfiles.size} following users (total seen: ${seenPks.size})...")
+          newProfiles.map(p => User(p.username, p.pk)).to(LazyList)
+        }
       }
     } match {
       case Success(users) => users
@@ -114,26 +121,83 @@ object InstaService {
         UserFeedMedias(user, List.empty)
     }
 
-
-  def getFeedStories()(using client: Instagram4j): LazyList[UserStories] =
+  def getFeedStories()(using client: Instagram4j): List[UserStories] =
     Try {
-      logger.info("Fetching feed story tray from Instagram...")
-      Option(client.getFeedStories)
-        .map(_.asScala.to(LazyList))
-        .getOrElse(LazyList.empty)
-        .flatMap { storyArray =>
-          val storiesList = storyArray.toList
-          storiesList.headOption.map { first =>
-            val user   = User(first.username, first.userID)
-            val medias = storiesList.map(s => Media(s.download_url, System.currentTimeMillis()))
-            UserStories(user, medias)
+      logger.info("Fetching active stories tray from Instagram...")
+      val json = com.instagram4j.web.Utils.getCall(com.instagram4j.web.Constants.Endpoints.STORIES, client.session)
+      val tray = Option(json.optJSONArray("tray")).getOrElse(new android.org.json.JSONArray())
+
+      if (tray.isEmpty) {
+        logger.info("Reels tray is empty - no followed users currently have active stories.")
+        List.empty[UserStories]
+      } else {
+        logger.info(s"Found ${tray.length()} users with active story reels in tray. Fetching story media...")
+
+        val userMap: Map[String, String] = (0 until tray.length()).flatMap { i =>
+          val trayItem = tray.getJSONObject(i)
+          val userObj = Option(trayItem.optJSONObject("user"))
+          val pk = userObj.map(_.optString("pk", "")).filter(_.nonEmpty).getOrElse(trayItem.optString("id", ""))
+          val username = userObj.map(_.optString("username", "")).filter(_.nonEmpty).getOrElse(pk)
+          if (pk.nonEmpty) Some(pk -> username) else None
+        }.toMap
+
+        val reelIds: Array[String] = (0 until tray.length()).map { i =>
+          tray.getJSONObject(i).optString("id", "")
+        }.filter(_.nonEmpty).toArray
+
+        val userStoriesList = reelIds.grouped(50).flatMap { batchIds =>
+          Try {
+            val vars = new android.org.json.JSONObject()
+            vars.put("initial_reel_id", batchIds.head)
+            vars.put("reel_ids", new android.org.json.JSONArray(batchIds))
+            vars.put("first", batchIds.length)
+
+            val response = com.instagram4j.web.Utils.postGraphQL(client.session, com.instagram4j.web.Constants.GraphQl.STORY, vars)
+            val edges = Option(response.optJSONObject("xdt_api__v1__feed__reels_media__connection"))
+              .flatMap(conn => Option(conn.optJSONArray("edges")))
+              .getOrElse(new android.org.json.JSONArray())
+
+            (0 until edges.length()).flatMap { i =>
+              val node = edges.getJSONObject(i).getJSONObject("node")
+              val nodeUser = Option(node.optJSONObject("user"))
+              val userId = nodeUser.map(_.optString("pk", "")).filter(_.nonEmpty).getOrElse(node.optString("id", ""))
+              val username = nodeUser.map(_.optString("username", "")).filter(_.nonEmpty).getOrElse(userMap.getOrElse(userId, userId))
+              val user = User(username, userId)
+
+              val items = Option(node.optJSONArray("items")).getOrElse(new android.org.json.JSONArray())
+              val medias = (0 until items.length()).flatMap { j =>
+                val item = items.getJSONObject(j)
+                val isVideo = item.optInt("media_type") == 2
+                val downloadUrl = if (isVideo) {
+                  Option(item.optJSONArray("video_versions")).filter(!_.isEmpty).map(_.getJSONObject(0).getString("url"))
+                } else {
+                  Option(item.optJSONObject("image_versions2"))
+                    .flatMap(v => Option(v.optJSONArray("candidates")))
+                    .filter(!_.isEmpty)
+                    .map(_.getJSONObject(0).getString("url"))
+                }
+                downloadUrl.map(url => Media(url, System.currentTimeMillis()))
+              }.toList
+
+              if (medias.nonEmpty) Some(UserStories(user, medias)) else None
+            }
+          } match {
+            case Success(batchStories) => batchStories
+            case Failure(ex) =>
+              logger.warn(s"Error querying story batch: ${ex.getMessage}")
+              List.empty[UserStories]
           }
-        }
+        }.toList
+
+        userStoriesList
+      }
     } match {
-      case Success(stories) => stories
+      case Success(stories) =>
+        logger.info(s"Loaded ${stories.map(_.medias.size).sum} stories across ${stories.size} users.")
+        stories
       case Failure(ex) =>
-        logger.error(s"Failed to fetch feed stories: ${ex.getMessage}")
-        LazyList.empty[UserStories]
+        logger.error(s"Failed to fetch feed stories: ${ex.getMessage}", ex)
+        List.empty[UserStories]
     }
 
   def saveStories(
@@ -141,27 +205,20 @@ object InstaService {
       maxConcurrency: Int = 3,
       requestDelayMs: Long = 350L
   )(using client: Instagram4j): Unit = {
-    logger.info("Fetching following users to save stories...")
-    val users = getFollowingUsers
+    val activeUserStories = getFeedStories()
 
-    var processedCount = 0
-    var savedStoriesCount = 0
-
-    users.foreach { user =>
-      processedCount += 1
-      if (requestDelayMs > 0 && processedCount > 1) Thread.sleep(requestDelayMs)
-      logger.info(s"[$processedCount] Checking stories for @${user.folderName}...")
-      val userStories = getUserStories(user)
-      if (userStories.medias.nonEmpty) {
-        logger.info(s"Found ${userStories.medias.size} stories for @${user.folderName}. Saving...")
-        val operations = userStories.medias.map { media =>
-          UrlOperation(media.url, user.folderName, MediaType.Stories)
+    if (activeUserStories.nonEmpty) {
+      val operations = activeUserStories.flatMap { userStories =>
+        userStories.medias.map { media =>
+          UrlOperation(media.url, userStories.user.folderName, MediaType.Stories)
         }
-        FileService.saveLocally(operations, destinationFolder, maxConcurrency)
-        savedStoriesCount += userStories.medias.size
       }
+      logger.info(s"Saving ${operations.size} active stories across ${activeUserStories.size} users...")
+      FileService.saveLocally(operations, destinationFolder, maxConcurrency)
+      logger.info(s"Successfully finished saving ${operations.size} stories.")
+    } else {
+      logger.info("No active stories found in feed tray.")
     }
-    logger.info(s"Finished saving stories. Checked $processedCount users, saved $savedStoriesCount stories.")
   }
 
   def saveFeeds(

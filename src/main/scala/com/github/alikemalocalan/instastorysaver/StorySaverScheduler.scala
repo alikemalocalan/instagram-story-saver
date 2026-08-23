@@ -2,7 +2,7 @@ package com.github.alikemalocalan.instastorysaver
 
 import com.github.alikemalocalan.instastorysaver.service.{FileService, InstaService}
 import com.instagram4j.web.Instagram4j
-import org.apache.commons.logging.{Log, LogFactory}
+import org.slf4j.{Logger, LoggerFactory}
 
 import java.util.concurrent.{Executors, ScheduledExecutorService, ThreadFactory, TimeUnit}
 import java.util.concurrent.atomic.AtomicInteger
@@ -10,7 +10,7 @@ import scala.concurrent.duration.*
 import scala.util.{Failure, Success, Try}
 
 object StorySaverScheduler extends Config {
-  private val logger: Log = LogFactory.getLog(getClass)
+  private val logger: Logger = LoggerFactory.getLogger(getClass)
 
   private val threadCounter = new AtomicInteger(1)
   private val scheduler: ScheduledExecutorService = Executors.newScheduledThreadPool(

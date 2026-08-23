@@ -106,7 +106,7 @@ object FileService {
         false
     }
 
-  private val MinFreeSpaceBytes = 50L * 1024 * 1024 // 50 MB safety threshold for router storage
+  private val MinFreeSpaceBytes = 50L * 1024 * 1024 // 50 MB safety threshold for storage
 
   def evictIdleConnections(): Unit = {
     try {
@@ -128,7 +128,7 @@ object FileService {
       Files.createDirectories(baseDir)
     }
 
-    // Safety check: Don't overflow router NAND / USB storage
+    // Safety check: Don't overflow storage
     Try(Files.getFileStore(baseDir).getUsableSpace) match {
       case Success(usable) if usable < MinFreeSpaceBytes =>
         logger.error(s"Low disk space alert on $destinationDir: only ${usable / (1024 * 1024)}MB free. Skipping download batch to protect device.")

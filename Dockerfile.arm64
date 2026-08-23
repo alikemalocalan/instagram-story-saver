@@ -1,6 +1,5 @@
 # ==============================================================================
-# Multi-stage Dockerfile to build a static ARM64 (musl) native binary
-# specifically optimized for GL.iNet GL-MT3000 (OpenWrt / ARM64)
+# Multi-stage Dockerfile to build a self-contained native ARM64 (armv8-a) binary
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
@@ -55,10 +54,10 @@ RUN native-image \
     -jar app.jar \
     -o instastorysaver-bin
 
-# Create self-contained bundle for OpenWrt (musl)
+# Create self-contained bundle for Linux ARM64
 RUN mkdir -p /dist/lib && \
     cp instastorysaver-bin /dist/instastorysaver-bin && \
-    # Copy dynamic linker and all dependent glibc shared libraries
+    # Copy dynamic linker and all dependent shared libraries
     cp -L /lib64/ld-linux-aarch64.so.1 /dist/lib/ 2>/dev/null || cp -L /lib/ld-linux-aarch64.so.1 /dist/lib/ && \
     for lib in $(ldd instastorysaver-bin | grep '=>' | awk '{print $3}'); do \
         [ -f "$lib" ] && cp -L "$lib" /dist/lib/; \
@@ -71,6 +70,4 @@ RUN mkdir -p /dist/lib && \
 # Stage 3: Export output bundle
 # ------------------------------------------------------------------------------
 FROM scratch AS export
-COPY --from=native-builder /dist /instastorysaver-router
-
-
+COPY --from=native-builder /dist /instastorysaver-linux-arm64

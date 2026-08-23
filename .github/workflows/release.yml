@@ -1,0 +1,57 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'sbt'
+
+      - name: Set up sbt
+        uses: sbt/setup-sbt@v1
+
+      - name: Build assembly Fat JAR
+        run: |
+          sbt assembly
+          cp target/out/jvm/scala-3.3.8/instastorysaver/instastorysaver.jar ./instastorysaver.jar
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build self-contained Linux ARM64 (armv8-a) bundle
+        run: |
+          docker buildx build \
+            --platform linux/arm64 \
+            --file Dockerfile.arm64 \
+            --output type=local,dest=. \
+            .
+          zip -r instastorysaver-linux-arm64.zip instastorysaver-linux-arm64
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            instastorysaver.jar
+            instastorysaver-linux-arm64.zip
+          generate_release_notes: true

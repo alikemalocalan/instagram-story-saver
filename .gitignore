@@ -253,7 +253,8 @@ hs_err_pid*
 
 # Native binaries & local debug logs
 instastorysaver-*
-instastorysaver-router/
+instastorysaver-linux-arm64/
+*.zip
 hata.txt
 .bsp/
 

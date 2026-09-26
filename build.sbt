@@ -8,15 +8,15 @@ ThisBuild / version := "1.0.0"
 ThisBuild / resolvers += "jitpack" at "https://jitpack.io"
 
 val instagram4jVersion = "3.0"
-val jacksonVersion = "2.22.2"
+val jacksonVersion = "2.22.3"
 val jacksonAnnotationsVersion = "2.22"
 val okhttpVersion = "5.5.0"
-val okioVersion = "3.18.1"
-val kotlinVersion = "2.4.10"
-val jsoupVersion = "1.23.1"
+val okioVersion = "3.18.2"
+val kotlinVersion = "2.4.20"
+val jsoupVersion = "1.23.2"
 val configVersion = "1.4.9"
 val mainargsVersion = "0.7.8"
-val slf4jVersion = "2.0.18"
+val slf4jVersion = "2.0.20"
 
 lazy val root = project
   .in(file("."))

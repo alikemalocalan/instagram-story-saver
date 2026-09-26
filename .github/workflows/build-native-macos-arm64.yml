@@ -1,0 +1,74 @@
+name: Build Native macOS ARM64 (On-Demand)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to attach the macOS ARM64 binary to (e.g. v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos-arm64-native:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository at tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag }}
+
+      - name: Set up GraalVM JDK 21
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '21'
+          distribution: 'graalvm-community'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache: 'sbt'
+
+      - name: Set up sbt
+        uses: sbt/setup-sbt@v1
+
+      - name: Build Fat JAR
+        run: |
+          sbt assembly
+          JAR_PATH=$(find target -type f -name "instastorysaver.jar" | head -n 1)
+          cp -f "$JAR_PATH" ./instastorysaver.jar
+
+      - name: Build Native macOS ARM64 Binary
+        run: |
+          native-image \
+            -J-Xmx5g \
+            -H:+UnlockExperimentalVMOptions \
+            --no-fallback \
+            --report-unsupported-elements-at-runtime \
+            -O3 \
+            -march=armv8-a \
+            -R:MinHeapSize=16m \
+            -R:MaxHeapSize=64m \
+            --strict-image-heap \
+            -H:+StripDebugInfo \
+            --enable-https \
+            --enable-http \
+            --install-exit-handlers \
+            --initialize-at-build-time=org.slf4j,com.typesafe.config,android.org.json,okio \
+            -jar instastorysaver.jar \
+            -o instastorysaver
+
+          chmod +x instastorysaver
+          mkdir -p dist
+          cp instastorysaver dist/instastorysaver-macos-arm64
+          tar -czvf instastorysaver-macos-arm64.tar.gz -C dist instastorysaver-macos-arm64
+          zip -j instastorysaver-macos-arm64.zip dist/instastorysaver-macos-arm64
+
+      - name: Attach macOS ARM64 binary to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag }}
+          files: |
+            instastorysaver-macos-arm64.tar.gz
+            instastorysaver-macos-arm64.zip
+            dist/instastorysaver-macos-arm64

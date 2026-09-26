@@ -38,29 +38,44 @@ object StorySaverCLI {
       includeFeeds: Boolean = false,
       @arg(name = "concurrency", doc = "Maximum concurrent downloads (default: 3)")
       concurrency: Int = 3,
-      @arg(name = "delay-ms", doc = "Request delay in milliseconds between users (default: 350)")
-      delayMs: Long = 350L
+      @arg(name = "check-interval-days", doc = "Days before re-checking feeds/highlights via following.csv (default: 7)")
+      checkIntervalDays: Int = 7
   ): Unit = {
     try {
       Try {
         val clientInstance = createInstagramClient(username, sessionId, csrfToken)
         given Instagram4j = clientInstance
 
+        // Always ensure following.csv exists so followed users list is available for stories, highlights, and feeds
+        InstaService.ensureFollowingCsvExists(destinationFolder)
+
         logger.info(s"Starting daily story save pipeline for @${username}...")
-        InstaService.saveStories(destinationFolder, concurrency, delayMs)
+        InstaService.saveStories(destinationFolder, concurrency)
 
         if (includeHighlights) {
-          logger.info("Processing followed users' story highlights...")
-          InstaService.saveUserHighLightStories(destinationFolder, concurrency, delayMs)
+          logger.info("Processing followed users' story highlights via following.csv...")
+          InstaService.saveUserHighLightStories(
+            destinationFolder = destinationFolder,
+            maxConcurrency = concurrency,
+            intervalDays = checkIntervalDays
+          )
         }
 
         if (includeFeeds) {
-          logger.info("Processing followed users' feed posts...")
-          InstaService.saveFeeds(destinationFolder, concurrency, delayMs)
+          logger.info("Processing followed users' feed posts via following.csv...")
+          InstaService.saveFeeds(
+            destinationFolder = destinationFolder,
+            maxConcurrency = concurrency,
+            intervalDays = checkIntervalDays
+          )
         }
       } match {
-        case Success(_)  => logger.info("Successfully finished saving Instagram media.")
-        case Failure(ex) => logger.error(s"Error saving media: ${ex.getMessage}", ex)
+        case Success(_) =>
+          logger.info("Successfully finished saving Instagram media.")
+        case Failure(ex: IllegalStateException) =>
+          logger.error(s"Execution aborted: ${ex.getMessage}")
+        case Failure(ex) =>
+          logger.error(s"Error saving media: ${ex.getMessage}", ex)
       }
     } finally {
       FileService.shutdown()

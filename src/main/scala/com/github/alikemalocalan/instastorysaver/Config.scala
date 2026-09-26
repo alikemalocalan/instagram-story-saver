@@ -25,9 +25,9 @@ trait Config {
     if (config.hasPath("max-concurrent-downloads")) config.getInt("max-concurrent-downloads")
     else 3
 
-  protected val requestDelayMs: Long =
-    if (config.hasPath("request-delay-ms")) config.getLong("request-delay-ms")
-    else 350L
+  protected val checkIntervalDays: Int =
+    if (config.hasPath("check-interval-days")) config.getInt("check-interval-days")
+    else 7
 
   protected val retryCount: Int =
     if (config.hasPath("retry-count")) config.getInt("retry-count")

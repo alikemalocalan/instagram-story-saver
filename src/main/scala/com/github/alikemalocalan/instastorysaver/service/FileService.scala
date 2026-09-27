@@ -23,6 +23,20 @@ object FileService {
     .writeTimeout(30, TimeUnit.SECONDS)
     .retryOnConnectionFailure(true)
     .followRedirects(true)
+    .addInterceptor((chain: Interceptor.Chain) => {
+      val req = chain.request().newBuilder()
+        .header("user-agent", HttpConstants.UserAgent)
+        .header("accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+        .header("accept-language", HttpConstants.AcceptLanguage)
+        .header("sec-ch-ua", HttpConstants.SecChUa)
+        .header("sec-ch-ua-mobile", HttpConstants.SecChUaMobile)
+        .header("sec-ch-ua-platform", HttpConstants.SecChUaPlatform)
+        .header("sec-fetch-dest", "image")
+        .header("sec-fetch-mode", "no-cors")
+        .header("sec-fetch-site", "cross-site")
+        .build()
+      chain.proceed(req)
+    })
     .build()
 
   /** Streams HTTP response directly to target path using a temporary .part file and atomic move.

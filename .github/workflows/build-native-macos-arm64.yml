@@ -45,12 +45,13 @@ jobs:
             -H:+UnlockExperimentalVMOptions \
             --no-fallback \
             --report-unsupported-elements-at-runtime \
-            -O3 \
+            -Os \
             -march=armv8-a \
             -R:MinHeapSize=16m \
             -R:MaxHeapSize=64m \
             --strict-image-heap \
-            -H:+StripDebugInfo \
+            -H:-IncludeStackTraces \
+            -H:NativeLinkerOption=-Wl,-dead_strip \
             --enable-https \
             --enable-http \
             --install-exit-handlers \
@@ -58,6 +59,7 @@ jobs:
             -jar instastorysaver.jar \
             -o instastorysaver
 
+          strip -x instastorysaver
           chmod +x instastorysaver
           mkdir -p dist
           cp instastorysaver dist/instastorysaver-macos-arm64

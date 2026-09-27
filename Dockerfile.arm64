@@ -13,11 +13,12 @@ RUN native-image \
     -H:+UnlockExperimentalVMOptions \
     --no-fallback \
     --report-unsupported-elements-at-runtime \
-    -O3 \
+    -Os \
     -march=armv8-a \
     -R:MinHeapSize=16m \
     -R:MaxHeapSize=64m \
     --strict-image-heap \
+    -H:-IncludeStackTraces \
     -H:+StripDebugInfo \
     -H:NativeLinkerOption=-Wl,--gc-sections \
     -H:NativeLinkerOption=-Wl,--strip-all \

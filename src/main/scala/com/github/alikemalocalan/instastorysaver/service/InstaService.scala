@@ -29,6 +29,9 @@ object InstaService {
 
       while (hasMore && paginator.hasNext && pageCount < maxPages) {
         pageCount += 1
+        if (pageCount > 1) {
+          Thread.sleep(400)
+        }
         val pageList = paginator.next()
         if (pageList == null || pageList.isEmpty) {
           hasMore = false
@@ -183,11 +186,20 @@ object InstaService {
       .url("https://www.instagram.com/graphql/query")
       .header("authority", "www.instagram.com")
       .header("accept", "*/*")
+      .header("accept-language", HttpConstants.AcceptLanguage)
       .header("origin", "https://www.instagram.com")
       .header("referer", "https://www.instagram.com/")
+      .header("sec-ch-ua", HttpConstants.SecChUa)
+      .header("sec-ch-ua-mobile", HttpConstants.SecChUaMobile)
+      .header("sec-ch-ua-platform", HttpConstants.SecChUaPlatform)
+      .header("sec-fetch-dest", "empty")
+      .header("sec-fetch-mode", "cors")
       .header("sec-fetch-site", "same-origin")
-      .header("user-agent", com.instagram4j.web.Constants.WEB_USER_AGENT)
-      .header("x-ig-app-id", com.instagram4j.web.Constants.APP_ID)
+      .header("user-agent", HttpConstants.UserAgent)
+      .header("x-asbd-id", HttpConstants.AsbdId)
+      .header("x-ig-app-id", HttpConstants.AppId)
+      .header("x-ig-www-claim", "0")
+      .header("x-requested-with", "XMLHttpRequest")
       .header("x-csrftoken", if (client.crsf != null) client.crsf else "")
       .header("cookie", cookie)
       .post(formBody)
@@ -218,9 +230,17 @@ object InstaService {
     // Check if Instagram treated the request as unauthenticated
     Option(data.optJSONObject("xdt_viewer")).foreach { viewer =>
       if (viewer.isNull("user") || viewer.optJSONObject("user") == null) {
-        logger.warn(
-          "⚠️ Instagram GraphQL responded as unauthenticated viewer (xdt_viewer.user is null). Active session may be expired."
-        )
+        val msg =
+          """
+            |================================================================================
+            |❌ INSTAGRAM SESSION IS EXPIRED OR INVALID!
+            |
+            |Instagram GraphQL responded as unauthenticated viewer (xdt_viewer.user is null).
+            |Please refresh your --session-id and --csrf-token values from your browser.
+            |================================================================================
+            |""".stripMargin
+        logger.error(msg)
+        throw new IllegalStateException("Instagram session is expired or invalid. Please refresh cookies.")
       }
     }
 
@@ -279,14 +299,34 @@ object InstaService {
         .map { edgeArray =>
           val ids = (0 until edgeArray.length()).map { i =>
             edgeArray.getJSONObject(i).getJSONObject("node").getString("id")
-          }.toArray
-          Option(com.instagram4j.web.endpoints.profile.Story.getActualStory(ids, client.session))
-            .map(
-              _.asScala.toList
-                .filter(s => s != null && isValidHttpUrl(s.download_url))
-                .map(s => HighLightStoryMedia(s.download_url.trim, System.currentTimeMillis(), "highlight"))
-            )
-            .getOrElse(List.empty)
+          }.toList
+
+          if (ids.isEmpty) {
+            List.empty[HighLightStoryMedia]
+          } else {
+            val vars = new android.org.json.JSONObject()
+            vars.put("initial_reel_id", ids.head)
+            val reelIdsArray = new android.org.json.JSONArray()
+            ids.foreach(reelIdsArray.put)
+            vars.put("reel_ids", reelIdsArray)
+            vars.put("first", math.max(ids.size, 10))
+
+            val res = queryGraphQLWeb(com.instagram4j.web.Constants.GraphQl.STORY, vars)
+            val reelEdges = Option(res.optJSONObject("data"))
+              .orElse(Some(res))
+              .flatMap(d => Option(d.optJSONObject("xdt_api__v1__feed__reels_media__connection")))
+              .flatMap(c => Option(c.optJSONArray("edges")))
+              .getOrElse(new android.org.json.JSONArray())
+
+            (0 until reelEdges.length()).flatMap { j =>
+              val node = reelEdges.getJSONObject(j).getJSONObject("node")
+              val title = Option(node.optString("title")).filter(_.nonEmpty).getOrElse("highlight")
+              val items = Option(node.optJSONArray("items")).getOrElse(new android.org.json.JSONArray())
+              extractMediaItems(items).map { m =>
+                HighLightStoryMedia(m.url, m.takenOn, title)
+              }
+            }.toList
+          }
         }
         .getOrElse(List.empty)
 
@@ -351,7 +391,12 @@ object InstaService {
 
     val userStoriesList = followedUsers
       .grouped(10)
-      .flatMap { batchUsers =>
+      .zipWithIndex
+      .flatMap { case (batchUsers, batchIndex) =>
+        if (batchIndex > 0) {
+          // Polite delay between batches to respect rate limits and prevent spam triggers
+          Thread.sleep(600)
+        }
         Try {
           val reelIdsArray = new android.org.json.JSONArray()
           batchUsers.foreach(u => reelIdsArray.put(u.userId))
@@ -370,6 +415,7 @@ object InstaService {
               s"GraphQL batch story query failed (${graphEx.getMessage}). Falling back to individual queries for this batch..."
             )
             batchUsers.flatMap { u =>
+              Thread.sleep(500)
               val single = getUserStories(u)
               if (single.medias.nonEmpty) Some(single) else None
             }
@@ -431,6 +477,9 @@ object InstaService {
 
     dueRecords.foreach { record =>
       processedCount += 1
+      if (processedCount > 1) {
+        Thread.sleep(500)
+      }
       val user = record.toUser
       logger.info(s"[$processedCount/${dueRecords.size}] Fetching feeds for @${user.folderName}...")
       val userFeeds = getUserPosts(user)
@@ -481,6 +530,9 @@ object InstaService {
 
     dueRecords.foreach { record =>
       processedCount += 1
+      if (processedCount > 1) {
+        Thread.sleep(500)
+      }
       val user = record.toUser
       logger.info(s"[$processedCount/${dueRecords.size}] Checking highlights for @${user.folderName}...")
       val userHighlights = getUserHighlights(user)

@@ -46,9 +46,6 @@ object StorySaverCLI {
         val clientInstance = createInstagramClient(username, sessionId, csrfToken)
         given Instagram4j = clientInstance
 
-        // Always ensure following.csv exists so followed users list is available for stories, highlights, and feeds
-        InstaService.ensureFollowingCsvExists(destinationFolder)
-
         logger.info(s"Starting daily story save pipeline for @${username}...")
         InstaService.saveStories(destinationFolder, concurrency)
 

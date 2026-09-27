@@ -13,7 +13,6 @@ val jacksonAnnotationsVersion = "2.22"
 val okhttpVersion = "5.5.0"
 val okioVersion = "3.18.2"
 val kotlinVersion = "2.4.20"
-val jsoupVersion = "1.23.2"
 val configVersion = "1.4.9"
 val mainargsVersion = "0.7.8"
 val slf4jVersion = "2.0.20"
@@ -32,7 +31,6 @@ lazy val root = project
       "com.squareup.okhttp3" % "okhttp-jvm" % okhttpVersion,
       "com.squareup.okio" % "okio" % okioVersion,
       "org.jetbrains.kotlin" % "kotlin-stdlib" % kotlinVersion,
-      "org.jsoup" % "jsoup" % jsoupVersion,
       "com.typesafe" % "config" % configVersion,
       "com.lihaoyi" %% "mainargs" % mainargsVersion,
       "org.slf4j" % "slf4j-simple" % slf4jVersion
@@ -43,8 +41,7 @@ lazy val root = project
       "com.fasterxml.jackson.core" % "jackson-annotations" % jacksonAnnotationsVersion,
       "com.squareup.okio" % "okio" % okioVersion,
       "com.squareup.okio" % "okio-jvm" % okioVersion,
-      "org.jetbrains.kotlin" % "kotlin-stdlib" % kotlinVersion,
-      "org.jsoup" % "jsoup" % jsoupVersion
+      "org.jetbrains.kotlin" % "kotlin-stdlib" % kotlinVersion
     ),
     scalacOptions ++= Seq(
       "-source:3.3",
@@ -59,22 +56,34 @@ lazy val root = project
     // --------------------------------------------------------------------------
     // GraalVM Native Image Settings
     // --------------------------------------------------------------------------
-    graalVMNativeImageOptions ++= Seq(
-      "-H:+UnlockExperimentalVMOptions",
-      "--no-fallback",
-      "-H:+StripDebugInfo",
-      "-O3",
-      "-march=armv8-a",
-      "-R:MinHeapSize=16m",
-      "-R:MaxHeapSize=64m",
-      "--strict-image-heap",
-      "-H:NativeLinkerOption=-Wl,--gc-sections",
-      "-H:NativeLinkerOption=-Wl,-z,relro,-z,now",
-      "--enable-https",
-      "--enable-http",
-      "--install-exit-handlers",
-      "--initialize-at-build-time=org.slf4j,com.typesafe.config,android.org.json,okio"
-    ),
+    graalVMNativeImageOptions ++= {
+      val isMac = System.getProperty("os.name", "").toLowerCase.contains("mac")
+      val baseOptions = Seq(
+        "-H:+UnlockExperimentalVMOptions",
+        "--no-fallback",
+        "-Os",
+        "-march=armv8-a",
+        "-R:MinHeapSize=16m",
+        "-R:MaxHeapSize=64m",
+        "--strict-image-heap",
+        "-H:-IncludeStackTraces",
+        "--enable-https",
+        "--enable-http",
+        "--install-exit-handlers",
+        "--initialize-at-build-time=org.slf4j,com.typesafe.config,android.org.json,okio"
+      )
+      if (isMac) {
+        baseOptions ++ Seq(
+          "-H:NativeLinkerOption=-Wl,-dead_strip"
+        )
+      } else {
+        baseOptions ++ Seq(
+          "-H:+StripDebugInfo",
+          "-H:NativeLinkerOption=-Wl,--gc-sections",
+          "-H:NativeLinkerOption=-Wl,-z,relro,-z,now"
+        )
+      }
+    },
 
     // --------------------------------------------------------------------------
     // Assembly Fat JAR Merge Strategies
@@ -86,7 +95,8 @@ lazy val root = project
       case PathList("META-INF", "versions", _*)                                                => MergeStrategy.first
       case PathList("META-INF", "maven", _*)                                                   => MergeStrategy.discard
       case PathList("META-INF", "proguard", _*)                                                => MergeStrategy.discard
-      case PathList("META-INF", "MANIFEST.MF" | "INDEX.LIST" | "DEPENDENCIES")                 => MergeStrategy.discard
+      case PathList("META-INF", "MANIFEST.MF" | "INDEX.LIST" | "DEPENDENCIES" | "NOTICE" | "NOTICE.txt" | "LICENSE" | "LICENSE.txt") => MergeStrategy.discard
+      case PathList("META-INF", p @ _*) if p.exists(_.toLowerCase.contains("notice")) || p.exists(_.toLowerCase.contains("license")) => MergeStrategy.discard
       case PathList("module-info.class")                                                       => MergeStrategy.discard
       case PathList("okhttp3", _*)                                                             => MergeStrategy.first
       case path if path.endsWith(".SF") || path.endsWith(".DSA") || path.endsWith(".RSA")      => MergeStrategy.discard

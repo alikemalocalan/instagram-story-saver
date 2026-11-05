@@ -35,6 +35,8 @@ object LoginService {
         if (original.header("sec-ch-ua-mobile") == null) builder.header("sec-ch-ua-mobile", HttpConstants.SecChUaMobile)
         if (original.header("sec-ch-ua-platform") == null) builder.header("sec-ch-ua-platform", HttpConstants.SecChUaPlatform)
         if (original.header("accept-language") == null) builder.header("accept-language", HttpConstants.AcceptLanguage)
+        if (original.header("x-ig-app-id") == null) builder.header("x-ig-app-id", HttpConstants.AppId)
+        if (original.header("x-asbd-id") == null) builder.header("x-asbd-id", HttpConstants.AsbdId)
 
         val response: Response = chain.proceed(builder.build())
         if (response.isRedirect) {

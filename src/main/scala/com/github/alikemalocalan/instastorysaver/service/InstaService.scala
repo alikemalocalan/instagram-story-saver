@@ -213,11 +213,19 @@ object InstaService {
       val json = new android.org.json.JSONObject(body)
       if (json.has("errors")) {
         val errors = json.getJSONArray("errors")
-        val errorMsg =
-          if (errors.length() > 0) errors.getJSONObject(0).optString("message", "Unknown error") else "GraphQL error"
-        throw new java.io.IOException(s"Instagram GraphQL error: $errorMsg (response: $body)")
+        val firstError = if (errors.length() > 0) errors.getJSONObject(0) else new android.org.json.JSONObject()
+        val errorSummary = firstError.optString("summary", "")
+        val errorMsg = firstError.optString("message", "Unknown error")
+
+        // Instagram returns "Not Found" when a queried user reel has no active stories.
+        if (errorSummary.equalsIgnoreCase("Not Found")) {
+          new android.org.json.JSONObject("{\"data\":{\"xdt_api__v1__feed__reels_media__connection\":{\"edges\":[]}}}")
+        } else {
+          throw new java.io.IOException(s"Instagram GraphQL error: $errorMsg (response: $body)")
+        }
+      } else {
+        json
       }
-      json
     }
   }
 
@@ -365,63 +373,143 @@ object InstaService {
         UserFeedMedias(user, List.empty)
     }
 
-  private def getFeedStories(destinationFolder: String = "")(using client: Instagram4j): List[UserStories] = {
-    logger.info("Fetching active stories for followed users...")
+  def fetchMediaInfo(mediaId: String)(using client: Instagram4j): Option[Media] = Try {
+    val selfPk = client.session.split("[:%]").headOption.getOrElse("")
+    val cookie =
+      s"sessionid=${client.session}; ds_user_id=$selfPk${if (client.crsf != null && client.crsf.nonEmpty) s"; csrftoken=${client.crsf}" else ""}"
 
-    val followedUsers: List[User] = Try {
-      if (
-        destinationFolder.nonEmpty && java.nio.file.Files.exists(
-          java.nio.file.Paths.get(destinationFolder, "following.csv")
-        )
-      ) {
-        CsvService.loadOrCreateFollowing(destinationFolder, () => fetchFollowingUsersFromApi()).map(_.toUser)
+    val req = new okhttp3.Request.Builder()
+      .url(s"https://www.instagram.com/api/v1/media/$mediaId/info/")
+      .header("authority", "www.instagram.com")
+      .header("accept", "*/*")
+      .header("accept-language", HttpConstants.AcceptLanguage)
+      .header("origin", "https://www.instagram.com")
+      .header("referer", "https://www.instagram.com/")
+      .header("sec-ch-ua", HttpConstants.SecChUa)
+      .header("sec-ch-ua-mobile", HttpConstants.SecChUaMobile)
+      .header("sec-ch-ua-platform", HttpConstants.SecChUaPlatform)
+      .header("sec-fetch-dest", "empty")
+      .header("sec-fetch-mode", "cors")
+      .header("sec-fetch-site", "same-origin")
+      .header("user-agent", HttpConstants.UserAgent)
+      .header("x-asbd-id", HttpConstants.AsbdId)
+      .header("x-ig-app-id", HttpConstants.AppId)
+      .header("x-ig-www-claim", "0")
+      .header("x-requested-with", "XMLHttpRequest")
+      .header("x-csrftoken", if (client.crsf != null) client.crsf else "")
+      .header("cookie", cookie)
+      .get()
+      .build()
+
+    Using.resource(com.instagram4j.web.Utils.client.newCall(req).execute()) { response =>
+      if (response.isSuccessful) {
+        val body = Option(response.body()).map(_.string()).getOrElse("")
+        val json = new android.org.json.JSONObject(body)
+        val items = json.optJSONArray("items")
+        if (items != null && items.length() > 0) {
+          extractMediaItems(items).headOption
+        } else None
+      } else None
+    }
+  }.toOption.flatten
+
+  private def fetchReelsTray()(using client: Instagram4j): List[(User, List[String])] = Try {
+    val selfPk = client.session.split("[:%]").headOption.getOrElse("")
+    val cookie =
+      s"sessionid=${client.session}; ds_user_id=$selfPk${if (client.crsf != null && client.crsf.nonEmpty) s"; csrftoken=${client.crsf}" else ""}"
+
+    val req = new okhttp3.Request.Builder()
+      .url("https://www.instagram.com/api/v1/feed/reels_tray/")
+      .header("authority", "www.instagram.com")
+      .header("accept", "*/*")
+      .header("accept-language", HttpConstants.AcceptLanguage)
+      .header("origin", "https://www.instagram.com")
+      .header("referer", "https://www.instagram.com/")
+      .header("sec-ch-ua", HttpConstants.SecChUa)
+      .header("sec-ch-ua-mobile", HttpConstants.SecChUaMobile)
+      .header("sec-ch-ua-platform", HttpConstants.SecChUaPlatform)
+      .header("sec-fetch-dest", "empty")
+      .header("sec-fetch-mode", "cors")
+      .header("sec-fetch-site", "same-origin")
+      .header("user-agent", HttpConstants.UserAgent)
+      .header("x-asbd-id", HttpConstants.AsbdId)
+      .header("x-ig-app-id", HttpConstants.AppId)
+      .header("x-ig-www-claim", "0")
+      .header("x-requested-with", "XMLHttpRequest")
+      .header("x-csrftoken", if (client.crsf != null) client.crsf else "")
+      .header("cookie", cookie)
+      .get()
+      .build()
+
+    Using.resource(com.instagram4j.web.Utils.client.newCall(req).execute()) { response =>
+      if (!response.isSuccessful) {
+        logger.warn(s"Failed to fetch reels tray: HTTP ${response.code()}")
+        List.empty
       } else {
-        fetchFollowingUsersFromApi()
-      }
-    }.getOrElse(List.empty)
+        val body = Option(response.body()).map(_.string()).getOrElse("")
+        val json = new android.org.json.JSONObject(body)
+        val tray = json.optJSONArray("tray")
+        if (tray == null) List.empty
+        else {
+          (0 until tray.length()).flatMap { i =>
+            val reel = tray.getJSONObject(i)
+            val userObj = reel.optJSONObject("user")
+            if (userObj == null) None
+            else {
+              val username = userObj.optString("username", "")
+              val userId = String.valueOf(reel.optLong("id", userObj.optLong("pk", 0)))
+              val mediaIdsArr = reel.optJSONArray("media_ids")
+              val mediaIds = if (mediaIdsArr != null) {
+                (0 until mediaIdsArr.length()).map(k => String.valueOf(mediaIdsArr.get(k))).toList
+              } else List.empty[String]
 
-    if (followedUsers.isEmpty) {
-      logger.warn("No followed users available to check for stories.")
+              if (username.nonEmpty && mediaIds.nonEmpty) {
+                Some((User(username, userId), mediaIds))
+              } else None
+            }
+          }.toList
+        }
+      }
+    }
+  }.getOrElse(List.empty)
+
+  private def getFeedStories(destinationFolder: String = "")(using client: Instagram4j): List[UserStories] = {
+    logger.info("Fetching active stories from reels tray...")
+
+    val trayReels = fetchReelsTray()
+    if (trayReels.isEmpty) {
+      logger.info("No active reels returned in tray.")
       return List.empty[UserStories]
     }
 
-    logger.info(s"Checking active stories across ${followedUsers.size} followed users (including previously viewed)...")
+    logger.info(s"Loaded ${trayReels.size} active reels from feed tray.")
 
-    val userMap = followedUsers.map(u => u.userId -> u.folderName).toMap
-
-    val userStoriesList = followedUsers
-      .grouped(10)
-      .zipWithIndex
-      .flatMap { case (batchUsers, batchIndex) =>
-        if (batchIndex > 0) {
-          // Polite delay between batches to respect rate limits and prevent spam triggers
-          Thread.sleep(600)
-        }
-        Try {
-          val reelIdsArray = new android.org.json.JSONArray()
-          batchUsers.foreach(u => reelIdsArray.put(u.userId))
-
-          val vars = new android.org.json.JSONObject()
-          vars.put("initial_reel_id", batchUsers.head.userId)
-          vars.put("reel_ids", reelIdsArray)
-          vars.put("first", math.max(batchUsers.size, 10))
-
-          val response = queryGraphQLWeb(com.instagram4j.web.Constants.GraphQl.STORY, vars)
-          parseStoriesFromGraphQLResponse(response, userMap)
-        } match {
-          case Success(stories) => stories
-          case Failure(graphEx) =>
-            logger.warn(
-              s"GraphQL batch story query failed (${graphEx.getMessage}). Falling back to individual queries for this batch..."
-            )
-            batchUsers.flatMap { u =>
-              Thread.sleep(500)
-              val single = getUserStories(u)
-              if (single.medias.nonEmpty) Some(single) else None
-            }
-        }
+    val targetReels = if (
+      destinationFolder.nonEmpty && java.nio.file.Files.exists(
+        java.nio.file.Paths.get(destinationFolder, "following.csv")
+      )
+    ) {
+      val followedUsers =
+        CsvService.loadOrCreateFollowing(destinationFolder, () => fetchFollowingUsersFromApi()).map(_.toUser)
+      val followedUsernames = followedUsers.map(_.folderName.toLowerCase).toSet
+      val followedIds = followedUsers.map(_.userId).toSet
+      trayReels.filter { case (user, _) =>
+        followedUsernames.contains(user.folderName.toLowerCase) || followedIds.contains(user.userId)
       }
-      .toList
+    } else {
+      trayReels
+    }
+
+    logger.info(s"Matching ${targetReels.size} followed users with active stories to download...")
+
+    val userStoriesList = targetReels.flatMap { case (user, mediaIds) =>
+      logger.info(s"Fetching ${mediaIds.size} stories for @${user.folderName}...")
+      val medias = mediaIds.flatMap { mediaId =>
+        Thread.sleep(150)
+        fetchMediaInfo(mediaId)
+      }
+      if (medias.nonEmpty) Some(UserStories(user, medias)) else None
+    }
 
     val totalMediaCount = userStoriesList.map(_.medias.size).sum
     logger.info(s"Loaded $totalMediaCount active stories across ${userStoriesList.size} users.")

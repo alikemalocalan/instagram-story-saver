@@ -1,70 +1,74 @@
-# GraphQL Değişiklikleri İçin Müdahale Rehberi
+# GraphQL Change Response Playbook
 
-Instagram web GraphQL/HTML yapısını değiştirdiğinde bu rehber, bir AI agent’ın sorunu hızlıca teşhis edip **küçük bir diff** ile çözmesini sağlar.
+When Instagram changes its web GraphQL/HTML structure, this guide helps an AI agent diagnose the problem quickly and fix it with a **small diff**.
 
-Prefix’ler loglarda kararlıdır:
+Log prefixes are stable:
 
-- `[GRAPHQL-SHAPE]` — beklenen response path kayboldu; hangi parser uyardıysa oraya bak.
-- `[GRAPHQL-ERROR]` — HTTP hatası veya GraphQL `errors` dizisi; doc id / cookie / csrf adayı.
+- `[GRAPHQL-SHAPE]` — an expected response path disappeared; check the parser named in the warning.
+- `[GRAPHQL-ERROR]` — an HTTP error or a GraphQL `errors` array; suspect doc id / cookie / csrf.
 
 ---
 
-## 1. Belirti → muhtemel sebep → dosya
+## 1. Symptom → likely cause → file
 
-| Belirti | Muhtemel sebep | Önce bakılacak yer |
+| Symptom | Likely cause | Check first |
 | :--- | :--- | :--- |
-| Tray’de kullanıcı var ama “Loaded 0 active stories” | stories response path değişti veya HTML preloader shape’i değişti | `[GRAPHQL-SHAPE] stories` → `InstagramJsonParser.parseStories` / `parseStoriesPage`, fixture `stories.json`, `stories_page.html` |
-| `Could not parse stories page JSON` | HTML’de ana JSON’dan sonra yeni kök alanlar eklendi | `extractJsonObject` (`InstagramJsonParser`), fixture `stories_page.html` |
-| `xdt_viewer.user is null` | Oturum süresi dolmuş; kod hatası değil | Kullanıcıya cookie yenilemesi söylenmeli; `InstagramSession.cookie` |
-| `GraphQL request failed with HTTP 400/401` | doc_id retird oldu, cookie/csrf eksik veya header değişti | `GraphQlContract.Stories.docId`, `InstagramWebClient.queryGraphQL` header’ları |
-| `summary: "Not Found"` | Reel aktif story’siz; beklenen davranış | `resolveGraphQlError` → boş reelsresponse; “düzeltmeye” çalışma |
-| Feed 0 post | ProfilePosts doc id / variables / response path değişti | `[GRAPHQL-SHAPE] PolarisProfilePostsQuery`, `GraphQlContract.ProfilePosts`, fixture `feed.json` |
-| Highlight 0 | highlights doc id veya `data.highlights.edges` path’i değişti | `GraphQlContract.Highlights`, fixture `highlights.json` / `highlight_medias.json` |
-| following boş veya pagination durdu | `data.users` / `data.next_max_id` alanları değişti | `GraphQlContract.Following`, `parseFollowingPage`, fixture `following.json` |
-| Medya URL’leri alınamıyor | `video_versions` / `image_versions2` / `display_url` shape’i değişti | `bestVideoUrl` / `bestImageUrl` / `mediaItems` |
+| Users in the tray but "Loaded 0 active stories" | Stories response path changed, or the HTML preloader shape changed | `[GRAPHQL-SHAPE] xdt_api__v1__feed__reels_media__connection decode failed` → `InstagramDtos.StoriesData` / `parseStories`, fixtures `stories.json`, `stories_page.html` |
+| `Could not parse stories page JSON` | New root fields were appended after the main JSON in the HTML | `extractJsonObject` in `InstagramJsonParser`, fixture `stories_page.html` |
+| `xdt_viewer.user is null` | Session expired; not a code bug | Tell the user to refresh cookies; `InstagramSession.cookie` |
+| `GraphQL request failed with HTTP 400/401` | Retired doc id, missing cookie/csrf, or changed headers | `GraphQlContract.Stories.docId`, headers in `InstagramWebClient.queryGraphQL` |
+| `summary: "Not Found"` | Reel has no active stories; expected behavior | `resolveGraphQlError` → empty reels response. Do not "fix" this. |
+| Feed shows 0 posts | ProfilePosts doc id / variables / response path changed | `[GRAPHQL-SHAPE] PolarisProfilePostsQuery`, `GraphQlContract.ProfilePosts`, fixture `feed.json` |
+| Highlights show 0 | Highlights doc id or `data.highlights.edges` path changed | `GraphQlContract.Highlights`, fixtures `highlights.json` / `highlight_medias.json` |
+| Following is empty or pagination stops | `data.users` / `data.next_max_id` fields changed | `GraphQlContract.Following`, `parseFollowingPage`, fixture `following.json` |
+| Media URLs not found | `video_versions` / `image_versions2` / `display_url` shape changed | `InstagramDtos.MediaItem` / `VideoCandidate` / `ResourceCandidate`, then `bestVideoUrl` / `bestImageUrl` |
+| `Missing required field` warning | A new required field was added, or a field type changed | Make the DTO field `Option[...]`; `InstagramDecoders` already derives the decoder |
 
 ---
 
-## 2. Güvenli teşhis adımları
+## 2. Safe diagnosis steps
 
-1. **Testleri çalıştır:** `sbt test`. Fixture testleri hangi shape’in bozulduğunu hemen gösterir.
-2. **Logları tara:** `[GRAPHQL-SHAPE]` veya `[GRAPHQL-ERROR]` satırındaki `operation` ve `topLevelKeys` alanları hangi endpoint’in değiştiğini söyler.
-3. **Gerçek yanıtı al:** Tarayıcıda ilgili isteği kopyala; cookie, csrf, token ve gerçek medya URL’lerini çıkar.
-4. **Fixture ekle/güncelle:** `src/test/resources/graphql/<endpoint>.json` altına sanitized örnek koy. URL’leri `https://cdn.example.com/...` yap, kullanıcı adlarını dummy yap.
-5. **Kontratı güncelle:** doc id / URL / operation değiştiyse **sadece** `GraphQlContract.scala` üzerinde değiştir. `InstagramWebClient` kontrat alias’larını kullanır.
-6. **Parser’ı güncelle:** Yeni path’i `objField` / `arrField` / `str` / `int` / `long` yardımcılarıyla oku. Ham `Json` gezintisini her yere dağıtma.
-7. **Testi güncelle:** Fixture + beklenen değer aynı commit’te değişmeli. `GraphQlContract` doc id assert’lerini bilerek güncelle.
-8. **Doğrula:** `sbt "clean; compile; test; assembly"`.
-
----
-
-## 3. Sanitization kontrol listesi
-
-Fixture veya log örneği eklerken:
-
-- [ ] `sessionid`, `csrftoken`, `ds_user_id` yok
-- [ ] Gerçek kullanıcı adı yok (`alice`, `bob` kullan)
-- [ ] Gerçek CDN imzalı URL’leri yok (`cdn.example.com`)
-- [ ] Device id / fb_dtsg / lsd token’ı yok
-- [ ] JSON geçerli; örnek `sbt test` ile doğrulandı
+1. **Run the tests:** `sbt test`. The fixture tests show immediately which shape broke.
+2. **Scan the logs:** the `operation` and `topLevelKeys` fields on `[GRAPHQL-SHAPE]` / `[GRAPHQL-ERROR]` lines identify the affected endpoint.
+3. **Capture a real response:** copy the request in the browser, then strip cookies, csrf, tokens and real media URLs.
+4. **Add/update a fixture:** put a sanitized example under `src/test/resources/graphql/<endpoint>.json`. Use `https://cdn.example.com/...` URLs and dummy usernames.
+5. **Update the contract:** if a doc id / URL / operation changed, edit **only** `GraphQlContract.scala`. `InstagramWebClient` uses the contract aliases.
+6. **Update the DTO:** add the new field as `Option[...]` to the relevant `case class` in `dto/InstagramDtos.scala` (Circe ignores case-class defaults). Reuse `StringOrNumber` for string|number fields. For a new DTO, add one `given ... = deriveDecoder` line in `InstagramDecoders.scala`. Do not write raw `Json` traversal.
+7. **Update the domain conversion:** only in `InstagramJsonParser`, map the new field to the domain model. The `values(...)` helper turns missing lists into `Nil`.
+8. **Update the test:** fixture and expected values must change in the same commit. Update the `GraphQlContract` doc id assertions deliberately.
+9. **Verify:** `sbt "clean; compile; test; assembly"`.
 
 ---
 
-## 4. Küçük diff için altın kurallar
+## 3. Sanitization checklist
 
-- Yeni bir HTTP istemcisi veya JSON kütüphanesi ekleme; Java HttpClient ve Circe yeterli.
-- Doc id’leri `InstagramWebClient` içine gizleme; `GraphQlContract` tek kaynak.
-- Parser’da sessizce boş liste döndürme; yeni path beklenmiyorsa `[GRAPHQL-SHAPE]` uyarısı zaten loglanır.
-- `parseStoriesPage` için `</script>`’e kadar parse etme; `extractJsonObject` dengeli süslü parantez kullanır.
-- “Not Found” GraphQL hatasını aktif story sanıp tekrar deneme; bu Instagram’ın boş reel davranışı.
+When adding a fixture or log example:
+
+- [ ] No `sessionid`, `csrftoken`, `ds_user_id`
+- [ ] No real usernames (use `alice`, `bob`)
+- [ ] No real signed CDN URLs (use `cdn.example.com`)
+- [ ] No device id / fb_dtsg / lsd token
+- [ ] Valid JSON, verified with `sbt test`
 
 ---
 
-## 5. Değişiklik sonrası kontrol
+## 4. Golden rules for a small diff
+
+- Do not add a new HTTP client or JSON library; Java HttpClient and Circe are enough.
+- Do not hide doc ids inside `InstagramWebClient`; `GraphQlContract` is the single source.
+- Do **not** add `= Nil` / `= ""` defaults to DTO fields; Circe does not apply them and reports `Missing required field`. Use `Option`.
+- Use `import InstagramDecoders.{given, *}` instead of `import InstagramDecoders.*`; otherwise the `given`s are not in implicit scope.
+- Do not silently return an empty list in the parser; the `[GRAPHQL-SHAPE]` warning already records an unexpected path.
+- For `parseStoriesPage`, do not parse up to `</script>`; `extractJsonObject` scans balanced braces.
+- Do not retry a "Not Found" GraphQL error as if it were an active story; that is Instagram's empty-reel behavior.
+
+---
+
+## 5. Post-change verification
 
 ```bash
 sbt "clean; compile; test; assembly"
-git diff --stat   # değişiklik küçük olmalı: kontrat + parser + fixture + test
+git diff --stat   # keep it small: contract + DTO/parser + fixture + test
 ```
 
-Gerçek oturumla uçtan uca doğrulama için IDE run configuration kullanılabilir; cookie’ler `.idea/workspace.xml` içinde tutulur, commit edilmez.
+For end-to-end verification with a real session, use the IDE run configuration. Cookies live in `.idea/workspace.xml` and are never committed.

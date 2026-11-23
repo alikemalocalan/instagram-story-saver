@@ -3,6 +3,7 @@ package com.github.alikemalocalan.instastorysaver.service.web
 import com.github.alikemalocalan.instastorysaver.model.*
 import com.github.alikemalocalan.instastorysaver.service.HttpConstants
 import com.github.alikemalocalan.instastorysaver.service.web.InstagramJsonParser.*
+import com.github.alikemalocalan.instastorysaver.service.web.dto.InstagramDtos.*
 import io.circe.Json
 import org.slf4j.{Logger, LoggerFactory}
 
@@ -17,6 +18,7 @@ import scala.util.{Failure, Success, Try}
  */
 final class InstagramWebClient(session: InstagramSession) {
   import InstagramWebClient.*
+  import InstagramDecoders.{given, *}
 
   private def csrf: String = session.csrfToken
   private def cookie: String = session.cookie
@@ -45,9 +47,10 @@ final class InstagramWebClient(session: InstagramSession) {
     }
 
     val json = parseJson(responseBody, "GraphQL response").getOrElse(Json.obj())
-    if (json.asObject.exists(_.contains("errors"))) {
+    val errors = json.as[GraphQlErrorResponse].toOption.flatMap(_.errors).getOrElse(Nil)
+    if (errors.nonEmpty) {
       logger.warn(s"[GRAPHQL-ERROR] $docId returned errors: ${responseBody.take(500)}")
-      resolveGraphQlError(json, responseBody)
+      resolveGraphQlError(errors.head, responseBody)
     } else json
   }
 
@@ -55,11 +58,9 @@ final class InstagramWebClient(session: InstagramSession) {
    * Instagram reports "Not Found" for a reel that simply has no active stories, so those are
    * converted into an empty result instead of an error.
    */
-  private[web] def resolveGraphQlError(json: Json, rawBody: String): Json = {
-    val errors = arrField(json, "errors")
-    val firstError = errors.headOption.getOrElse(Json.obj())
-    val summary = strOr(firstError, "summary", "")
-    val message = strOr(firstError, "message", "Unknown error")
+  private[web] def resolveGraphQlError(error: GraphQlError, rawBody: String): Json = {
+    val summary = error.summary.map(_.trim).getOrElse("")
+    val message = error.message.map(_.trim).filter(_.nonEmpty).getOrElse("Unknown error")
 
     if (summary.equalsIgnoreCase("Not Found")) emptyReelsMediaResponse
     else throw new java.io.IOException(s"Instagram GraphQL error: $message (response: $rawBody)")

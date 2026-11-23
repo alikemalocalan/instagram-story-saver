@@ -90,10 +90,10 @@ sbt "clean; compile; test; assembly"
 
 Toolchain: Scala `3.9.0`, sbt `2.0.12`, Java `21+`.
 
-Migration details (OkHttp → Java HTTP, json-android → Circe, native-image ayarları):
+Migration details (OkHttp → Java HTTP, json-android → Circe, native-image settings):
 [docs/MIGRATIONS.md](docs/MIGRATIONS.md)
 
-Instagram GraphQL değişikliklerinde AI agent’lar için müdahale rehberi:
+Response guide for AI agents when Instagram GraphQL changes:
 [docs/GRAPHQL_PLAYBOOK.md](docs/GRAPHQL_PLAYBOOK.md) · [AGENTS.md](AGENTS.md)
 
 ---

@@ -20,6 +20,7 @@ lazy val root = project
     libraryDependencies ++= Seq(
       "io.circe" %% "circe-core" % circeVersion,
       "io.circe" %% "circe-parser" % circeVersion,
+      "io.circe" %% "circe-generic" % circeVersion,
       "com.typesafe" % "config" % configVersion,
       "com.lihaoyi" %% "mainargs" % mainargsVersion,
       "org.slf4j" % "slf4j-simple" % slf4jVersion,

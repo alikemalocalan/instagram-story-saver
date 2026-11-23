@@ -1,6 +1,7 @@
 package com.github.alikemalocalan.instastorysaver.service.web
 
 import com.github.alikemalocalan.instastorysaver.model.User
+import com.github.alikemalocalan.instastorysaver.service.web.dto.InstagramDtos.GraphQlErrorResponse
 import io.circe.Json
 import munit.FunSuite
 
@@ -39,6 +40,10 @@ final class InstagramGraphQlSuite extends FunSuite {
     assertEquals(stories.head.user.userId, "123")
     assertEquals(stories.head.medias.map(_.url), List("https://cdn.example.com/high.mp4"))
     assertEquals(stories.head.medias.head.takenOn, 1700000000000L)
+  }
+
+  test("stories: an unexpected response shape degrades to an empty result instead of throwing") {
+    assertEquals(parseStories(fixture("stories_wrong_shape.json"), Map.empty), List.empty)
   }
 
   test("stories: expired session is detected") {
@@ -92,8 +97,15 @@ final class InstagramGraphQlSuite extends FunSuite {
   }
 
   test("GraphQL Not Found error maps to an empty reels response") {
+    import InstagramDecoders.{given, *}
     val client = new InstagramWebClient(InstagramSession("123:abc", "csrf", "alice"))
-    val result = client.resolveGraphQlError(fixture("not_found_error.json"), "not found")
+    val error = fixture("not_found_error.json")
+      .as[GraphQlErrorResponse]
+      .toOption
+      .flatMap(_.errors)
+      .getOrElse(Nil)
+      .head
+    val result = client.resolveGraphQlError(error, "not found")
     assertEquals(result.noSpaces.contains("\"edges\":[]"), true)
   }
 

@@ -120,10 +120,7 @@ object InstaService {
     userStoriesList
   }
 
-  def saveStories(
-      destinationFolder: String,
-      maxConcurrency: Int = 3
-  )(using session: InstagramSession): Unit = {
+  def saveStories(destinationFolder: String)(using session: InstagramSession): Unit = {
     val activeUserStories = getFeedStories(destinationFolder)
 
     if (activeUserStories.nonEmpty) {
@@ -135,7 +132,7 @@ object InstaService {
       logger.info(
         s"Saving ${operations.size} active stories across ${activeUserStories.size} users in highest quality..."
       )
-      FileService.saveLocally(operations, destinationFolder, maxConcurrency)
+      FileService.saveLocally(operations, destinationFolder)
       logger.info(s"Successfully finished saving ${operations.size} stories.")
     } else {
       logger.info("No active stories found in feed tray.")
@@ -144,7 +141,6 @@ object InstaService {
 
   def saveFeeds(
       destinationFolder: String,
-      maxConcurrency: Int = 3,
       intervalDays: Int = 7
   )(using session: InstagramSession): Unit = {
     logger.info(s"Checking feed posts for followed users (${intervalDays}-day interval check via CSV)...")
@@ -180,7 +176,7 @@ object InstaService {
         val operations = userFeeds.medias.map { media =>
           UrlOperation(media.url, user.folderName, MediaType.Feeds)
         }
-        FileService.saveLocally(operations, destinationFolder, maxConcurrency)
+        FileService.saveLocally(operations, destinationFolder)
         savedFeedsCount += userFeeds.medias.size
       }
 
@@ -195,7 +191,6 @@ object InstaService {
 
   def saveUserHighLightStories(
       destinationFolder: String,
-      maxConcurrency: Int = 3,
       intervalDays: Int = 7
   )(using session: InstagramSession): Unit = {
     logger.info(s"Checking highlights for followed users (${intervalDays}-day interval check via CSV)...")
@@ -235,7 +230,7 @@ object InstaService {
         val operations = userHighlights.medias.map { media =>
           UrlOperation(media.url, s"${user.folderName}/${media.safeTitle}", MediaType.Highlights)
         }
-        FileService.saveLocally(operations, destinationFolder, maxConcurrency)
+        FileService.saveLocally(operations, destinationFolder)
         savedHighlightsCount += userHighlights.medias.size
       }
 

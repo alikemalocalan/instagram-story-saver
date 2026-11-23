@@ -1,75 +1,26 @@
 package com.github.alikemalocalan.instastorysaver.service
 
 import com.github.alikemalocalan.instastorysaver.model.UrlOperation
+import com.github.alikemalocalan.instastorysaver.service.web.{HttpGateway, InstagramHttpClient}
 import org.slf4j.{Logger, LoggerFactory}
 
-import java.net.URI
-import java.net.http.{HttpClient, HttpRequest, HttpResponse}
 import java.nio.file.*
-import java.time.Duration
-import java.util.concurrent.{Executors, TimeUnit}
 import scala.annotation.tailrec
-import scala.concurrent.duration.*
-import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.*
 
 object FileService {
   private val logger: Logger = LoggerFactory.getLogger(getClass)
 
-  private val httpClient: HttpClient =
-    HttpClient
-      .newBuilder()
-      .connectTimeout(Duration.ofSeconds(15))
-      .followRedirects(HttpClient.Redirect.ALWAYS)
-      .build()
-
-  private val MediaHeaders: Seq[(String, String)] = Seq(
-    "user-agent" -> HttpConstants.UserAgent,
-    "accept" -> "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-    "accept-language" -> HttpConstants.AcceptLanguage,
-    "sec-ch-ua" -> HttpConstants.SecChUa,
-    "sec-ch-ua-mobile" -> HttpConstants.SecChUaMobile,
-    "sec-ch-ua-platform" -> HttpConstants.SecChUaPlatform,
-    "sec-fetch-dest" -> "image",
-    "sec-fetch-mode" -> "no-cors",
-    "sec-fetch-site" -> "cross-site"
-  )
-
-  /** Streams HTTP response directly to target path using a temporary .part file and atomic move. */
-  private def streamToFile(url: String, destinationPath: Path): Try[Path] = {
+  /** Streams an HTTP response to a temporary `.part` file, then moves it atomically. */
+  private def streamToFile(gateway: HttpGateway, url: String, destinationPath: Path): Try[Path] =
     Try {
-      val trimmed = url.trim
-      val uri = URI.create(trimmed)
-      if (uri.getHost == null || (uri.getScheme != "https" && uri.getScheme != "http")) {
-        throw new IllegalArgumentException(s"Invalid or malformed HTTP URL: '$url'")
-      }
-
       val partPath = destinationPath.resolveSibling(s"${destinationPath.getFileName}.part")
-      val builder = HttpRequest
-        .newBuilder(uri)
-        .timeout(Duration.ofMinutes(5))
-        .GET()
-      MediaHeaders.foreach { case (key, value) => builder.setHeader(key, value) }
-
       Option(destinationPath.getParent).foreach(Files.createDirectories(_))
 
-      val response =
-        try httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream())
-        catch {
-          case ex: InterruptedException =>
-            Thread.currentThread().interrupt()
-            throw new java.io.IOException("Media download interrupted", ex)
-        }
-
-      if (response.statusCode() < 200 || response.statusCode() >= 300) {
-        try response.body().close()
-        catch { case _: Throwable => () }
-        throw new RuntimeException(s"HTTP ${response.statusCode()} downloading $url")
-      }
-
+      val input = gateway.openDownloadStream(url)
       try {
         Using.resources(
-          response.body(),
+          input,
           Files.newOutputStream(
             partPath,
             StandardOpenOption.CREATE,
@@ -86,7 +37,6 @@ object FileService {
         Files.deleteIfExists(partPath)
       }
     }
-  }
 
   private def moveAtomically(source: Path, destination: Path): Unit =
     try {
@@ -111,16 +61,27 @@ object FileService {
       case failure @ Failure(_) => failure
     }
 
-  private def downloadFile(url: String, targetPath: Path, maxRetries: Int = 3): Boolean =
-    retryWithBackoff(attemptsLeft = maxRetries, maxAttempts = maxRetries) {
-      streamToFile(url, targetPath)
-    } match {
-      case Success(path) =>
-        logger.info(s"Saved: $path")
-        true
-      case Failure(ex) =>
-        logger.error(s"Failed to download $url: ${ex.getMessage}")
-        false
+  private def downloadFile(
+      gateway: HttpGateway,
+      url: String,
+      targetPath: Path,
+      maxRetries: Int = 3
+  ): Boolean =
+    // The batch is already filtered; this second check also covers duplicates inside one batch.
+    if (Files.exists(targetPath)) {
+      logger.info(s"Already exists, skipping download: $targetPath")
+      true
+    } else {
+      retryWithBackoff(attemptsLeft = maxRetries, maxAttempts = maxRetries) {
+        streamToFile(gateway, url, targetPath)
+      } match {
+        case Success(path) =>
+          logger.info(s"Saved: $path")
+          true
+        case Failure(ex) =>
+          logger.error(s"Failed to download $url: ${ex.getMessage}")
+          false
+      }
     }
 
   private val MinFreeSpaceBytes = 50L * 1024 * 1024 // 50 MB safety threshold
@@ -128,7 +89,7 @@ object FileService {
   def saveLocally(
       operations: Iterable[UrlOperation],
       destinationDir: String,
-      maxConcurrency: Int = 3
+      gateway: HttpGateway = InstagramHttpClient
   ): Unit = {
     val baseDir = Paths.get(destinationDir)
 
@@ -145,38 +106,27 @@ object FileService {
       case _ => ()
     }
 
-    // Filter valid URLs and skip already downloaded files
-    val pendingOperations = operations.filter { op =>
+    val validOperations = operations.filter { op =>
       op != null &&
-      Option(op.url).exists(u => u.trim.startsWith("http://") || u.trim.startsWith("https://")) &&
-      !Files.exists(baseDir.resolve(op.fileFullPath))
+      Option(op.url).exists(u => u.trim.startsWith("http://") || u.trim.startsWith("https://"))
+    }
+    val pendingOperations = validOperations.filterNot(op => Files.exists(baseDir.resolve(op.fileFullPath)))
+    val skippedExisting = validOperations.size - pendingOperations.size
+    if (skippedExisting > 0) {
+      logger.info(s"Skipping $skippedExisting already downloaded file(s).")
     }
 
     if (pendingOperations.isEmpty) return
 
-    val executor = Executors.newFixedThreadPool(math.max(1, maxConcurrency))
-    given ec: ExecutionContext = ExecutionContext.fromExecutor(executor)
-
-    try {
-      val futures = pendingOperations.map { op =>
-        Future {
-          val targetPath = baseDir.resolve(op.fileFullPath)
-          Try(downloadFile(op.url, targetPath)).getOrElse(false)
-        }
+    // One file at a time: no thread pool, no Future pipeline.
+    pendingOperations.foreach { op =>
+      Try {
+        val targetPath = baseDir.resolve(op.fileFullPath)
+        downloadFile(gateway, op.url, targetPath)
+      } match {
+        case Failure(ex) => logger.error(s"Unexpected error downloading ${op.url}: ${ex.getMessage}", ex)
+        case Success(_)  => ()
       }
-
-      Await.result(Future.sequence(futures), 30.minutes)
-    } catch {
-      case ex: Throwable =>
-        logger.error(s"Error during batch download: ${ex.getMessage}", ex)
-    } finally {
-      executor.shutdown()
-      executor.awaitTermination(30, TimeUnit.SECONDS)
     }
-  }
-
-  def shutdown(): Unit = {
-    try httpClient.close()
-    catch { case _: Throwable => () }
   }
 }

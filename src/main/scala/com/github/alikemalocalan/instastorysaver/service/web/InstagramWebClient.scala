@@ -16,7 +16,7 @@ import scala.util.{Failure, Success, Try}
  * Uses the shared Java HTTP client and uPickle JSON values. The browser-style headers and cookies
  * are required for a web-issued session to be accepted by Instagram.
  */
-final class InstagramWebClient(session: InstagramSession) {
+final class InstagramWebClient(session: InstagramSession, gateway: HttpGateway = InstagramHttpClient) {
   import InstagramWebClient.*
   import InstagramDecoders.{given, *}
 
@@ -29,12 +29,12 @@ final class InstagramWebClient(session: InstagramSession) {
 
   /** Executes a web GraphQL query by doc id. */
   def queryGraphQL(docId: String, variables: Value): Value = {
-    val body = InstagramHttpClient.formBody(
+    val body = gateway.formBody(
       Seq("doc_id" -> docId, "variables" -> ujson.write(variables))
     )
 
-    val request = jsonHeaders(InstagramHttpClient.requestBuilder(GraphQlUrl))
-      .setHeader("content-type", InstagramHttpClient.FormContentType)
+    val request = jsonHeaders(gateway.requestBuilder(GraphQlUrl))
+      .setHeader("content-type", gateway.FormContentType)
       .setHeader("x-csrftoken", csrf)
       .setHeader("cookie", cookie)
       .POST(HttpRequest.BodyPublishers.ofString(body))
@@ -113,7 +113,7 @@ final class InstagramWebClient(session: InstagramSession) {
       val (fbDtsg, lsd) = webTokens(user.folderName)
       val variables = profilePostsVariables(user)
 
-      val body = InstagramHttpClient.formBody(
+      val body = gateway.formBody(
         Seq(
           "av" -> session.userId,
           "fb_dtsg" -> fbDtsg,
@@ -125,8 +125,8 @@ final class InstagramWebClient(session: InstagramSession) {
         )
       )
 
-      val request = jsonHeaders(InstagramHttpClient.requestBuilder(ApiGraphQlUrl))
-        .setHeader("content-type", InstagramHttpClient.FormContentType)
+      val request = jsonHeaders(gateway.requestBuilder(ApiGraphQlUrl))
+        .setHeader("content-type", gateway.FormContentType)
         .setHeader("referer", s"$WebBase/${user.folderName}/")
         .setHeader("x-csrftoken", csrf)
         .setHeader("x-fb-friendly-name", ProfilePostsFriendlyName)
@@ -155,7 +155,7 @@ final class InstagramWebClient(session: InstagramSession) {
   /** Reads stories from the server-rendered `/stories/<user>/` page (fallback for the tray flow). */
   def fetchStoriesFromPage(user: User): List[Media] =
     Try {
-      val request = htmlHeaders(InstagramHttpClient.requestBuilder(s"$WebBase/stories/${user.folderName}/"))
+      val request = htmlHeaders(gateway.requestBuilder(s"$WebBase/stories/${user.folderName}/"))
         .setHeader("cookie", cookie)
         .GET()
         .build()
@@ -166,7 +166,7 @@ final class InstagramWebClient(session: InstagramSession) {
 
   def fetchMediaInfo(mediaId: String): Option[Media] =
     Try {
-      val request = jsonHeaders(InstagramHttpClient.requestBuilder(s"$WebBase/api/v1/media/$mediaId/info/"))
+      val request = jsonHeaders(gateway.requestBuilder(s"$WebBase/api/v1/media/$mediaId/info/"))
         .setHeader("x-csrftoken", csrf)
         .setHeader("cookie", cookie)
         .GET()
@@ -179,7 +179,7 @@ final class InstagramWebClient(session: InstagramSession) {
 
   def fetchReelsTray(): List[(User, List[String])] =
     Try {
-      val request = jsonHeaders(InstagramHttpClient.requestBuilder(s"$WebBase/api/v1/feed/reels_tray/"))
+      val request = jsonHeaders(gateway.requestBuilder(s"$WebBase/api/v1/feed/reels_tray/"))
         .setHeader("x-csrftoken", csrf)
         .setHeader("cookie", cookie)
         .GET()
@@ -203,14 +203,14 @@ final class InstagramWebClient(session: InstagramSession) {
   def fetchFollowingPage(cursor: Option[String]): (List[User], Option[String]) = {
     val query = cursor.fold("?count=50")(value => s"?count=50&maxId=$value")
     val request = jsonHeaders(
-      InstagramHttpClient.requestBuilder(s"$WebBase/api/v1/friendships/${session.userId}/following/$query")
+      gateway.requestBuilder(s"$WebBase/api/v1/friendships/${session.userId}/following/$query")
     )
       .setHeader("x-csrftoken", csrf)
       .setHeader("cookie", cookie)
       .GET()
       .build()
 
-    val (status, responseBody) = InstagramHttpClient.execute(request)
+    val (status, responseBody) = execute(request)
     if (status < 200 || status >= 300) {
       throw new java.io.IOException(s"Failed to fetch following page: HTTP $status")
     }
@@ -233,7 +233,7 @@ final class InstagramWebClient(session: InstagramSession) {
 
   private def fetchWebTokens(username: String): (String, String) = {
     val path = if (username.nonEmpty) s"$username/" else ""
-    val request = htmlHeaders(InstagramHttpClient.requestBuilder(s"$WebBase/$path"))
+    val request = htmlHeaders(gateway.requestBuilder(s"$WebBase/$path"))
       .setHeader("cookie", cookie)
       .GET()
       .build()
@@ -246,7 +246,7 @@ final class InstagramWebClient(session: InstagramSession) {
   // HTTP plumbing
   // ---------------------------------------------------------------------------
 
-  private def execute(request: HttpRequest): (Int, String) = InstagramHttpClient.execute(request)
+  private def execute(request: HttpRequest): (Int, String) = gateway.execute(request)
 
   private def jsonHeaders(builder: HttpRequest.Builder): HttpRequest.Builder =
     baseHeaders(builder)

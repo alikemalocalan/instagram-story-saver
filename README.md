@@ -75,7 +75,7 @@ chmod +x instastorysaver-linux-arm64/instastorysaver instastorysaver-linux-arm64
 | `--csrf-token` | — | `csrftoken` cookie value from a browser session (required). |
 | `--destination-folder` | `~/instagram-stories` | Destination folder for downloaded media. |
 | `--check-interval-days` | `7` | Days before re-checking feeds or highlights for a user in `following.csv`. |
-| `--concurrency` | `3` | Maximum concurrent media file downloads. |
+| `--concurrency` | `1` | Deprecated; media files are downloaded sequentially and this value is ignored. |
 | `--include-feeds` | `false` | Also download feed posts of followed users. |
 | `--include-highlights` | `false` | Also download story highlights of followed users. |
 

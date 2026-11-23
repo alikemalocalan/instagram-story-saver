@@ -1,6 +1,6 @@
 package com.github.alikemalocalan.instastorysaver
 
-import com.github.alikemalocalan.instastorysaver.service.{FileService, InstaService}
+import com.github.alikemalocalan.instastorysaver.service.InstaService
 import com.github.alikemalocalan.instastorysaver.service.web.{InstagramHttpClient, InstagramSession}
 import mainargs.{ParserForMethods, arg, main}
 import org.slf4j.{Logger, LoggerFactory}
@@ -36,24 +36,27 @@ object StorySaverCLI {
       includeHighlights: Boolean = false,
       @arg(name = "include-feeds", doc = "Also download recent user feed posts")
       includeFeeds: Boolean = false,
-      @arg(name = "concurrency", doc = "Maximum concurrent downloads (default: 3)")
-      concurrency: Int = 3,
+      @arg(name = "concurrency", doc = "Deprecated: downloads are sequential; value is ignored")
+      concurrency: Int = 1,
       @arg(name = "check-interval-days", doc = "Days before re-checking feeds/highlights via following.csv (default: 7)")
       checkIntervalDays: Int = 7
   ): Unit = {
+    if (concurrency != 1) {
+      logger.warn("--concurrency is deprecated; downloads are sequential and this value is ignored.")
+    }
+
     try {
       Try {
         val session = createInstagramClient(username, sessionId, csrfToken)
         given InstagramSession = session
 
         logger.info(s"Starting daily story save pipeline for @${username}...")
-        InstaService.saveStories(destinationFolder, concurrency)
+        InstaService.saveStories(destinationFolder)
 
         if (includeHighlights) {
           logger.info("Processing followed users' story highlights via following.csv...")
           InstaService.saveUserHighLightStories(
             destinationFolder = destinationFolder,
-            maxConcurrency = concurrency,
             intervalDays = checkIntervalDays
           )
         }
@@ -62,7 +65,6 @@ object StorySaverCLI {
           logger.info("Processing followed users' feed posts via following.csv...")
           InstaService.saveFeeds(
             destinationFolder = destinationFolder,
-            maxConcurrency = concurrency,
             intervalDays = checkIntervalDays
           )
         }
@@ -75,7 +77,6 @@ object StorySaverCLI {
           logger.error(s"Error saving media: ${ex.getMessage}", ex)
       }
     } finally {
-      FileService.shutdown()
       InstagramHttpClient.close()
     }
   }

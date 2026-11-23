@@ -217,6 +217,25 @@ object InstagramJsonParser {
       }
       .getOrElse(List.empty)
 
+  /** Parses one page of the `friendships/<id>/following` response. */
+  def parseFollowingPage(response: JSONObject): (List[User], Option[String]) = {
+    val data = dataOf(response)
+    val users = Option(data.optJSONArray("users")).getOrElse(new JSONArray())
+
+    val parsedUsers = (0 until users.length()).flatMap { index =>
+      val user = users.getJSONObject(index)
+      val username = user.optString("username", "")
+      val userId = user.optString("pk", "")
+      Option.when(username.nonEmpty && userId.nonEmpty)(User(username, userId))
+    }.toList
+
+    val nextCursor = Option(data.optString("next_max_id", ""))
+      .map(_.trim)
+      .filter(value => value.nonEmpty && !value.equalsIgnoreCase("null"))
+
+    (parsedUsers, nextCursor)
+  }
+
   /** Extracts story media from the preloaded reels state embedded in a `/stories/<user>/` HTML page. */
   def parseStoriesPage(html: String): List[Media] = {
     val start = html.indexOf(ReelsMediaMarker)

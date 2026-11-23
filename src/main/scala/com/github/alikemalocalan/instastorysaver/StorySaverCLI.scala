@@ -1,7 +1,7 @@
 package com.github.alikemalocalan.instastorysaver
 
 import com.github.alikemalocalan.instastorysaver.service.{FileService, InstaService}
-import com.instagram4j.web.Instagram4j
+import com.github.alikemalocalan.instastorysaver.service.web.InstagramSession
 import mainargs.{ParserForMethods, arg, main}
 import org.slf4j.{Logger, LoggerFactory}
 
@@ -15,7 +15,7 @@ object StorySaverCLI {
       username: String,
       sessionId: String,
       csrfToken: String
-  ): Instagram4j =
+  ): InstagramSession =
     if (sessionId.trim.nonEmpty && csrfToken.trim.nonEmpty) {
       InstaService.fromSession(sessionId.trim, csrfToken.trim, username)
     } else {
@@ -43,8 +43,8 @@ object StorySaverCLI {
   ): Unit = {
     try {
       Try {
-        val clientInstance = createInstagramClient(username, sessionId, csrfToken)
-        given Instagram4j = clientInstance
+        val session = createInstagramClient(username, sessionId, csrfToken)
+        given InstagramSession = session
 
         logger.info(s"Starting daily story save pipeline for @${username}...")
         InstaService.saveStories(destinationFolder, concurrency)

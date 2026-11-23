@@ -4,11 +4,10 @@ import android.org.json.{JSONArray, JSONObject}
 import com.github.alikemalocalan.instastorysaver.model.*
 import com.github.alikemalocalan.instastorysaver.service.HttpConstants
 import com.github.alikemalocalan.instastorysaver.service.web.InstagramJsonParser.*
-import com.instagram4j.web.{Constants, Instagram4j, Utils}
 import okhttp3.{FormBody, Request}
 import org.slf4j.{Logger, LoggerFactory}
 
-import scala.util.{Failure, Success, Try, Using}
+import scala.util.{Failure, Success, Try}
 
 /**
  * Low-level client for the Instagram web API (`www.instagram.com`).
@@ -20,17 +19,17 @@ import scala.util.{Failure, Success, Try, Using}
  *      so Instagram treats the requests as unauthenticated.
  *   2. Its story endpoints target the mobile gateway (`i.instagram.com`), which invalidates web
  *      `sessionid` cookies and returns empty reels.
- *   3. Some bundled GraphQL doc ids are retired (for example `USER_STORY`); the active id is
- *      `Constants.GraphQl.STORY`.
+ *   3. Some bundled GraphQL doc ids are retired (for example `USER_STORY`); the active ids are
+ *      defined in this file.
  *
- * If a future instagram4j release fixes these issues, this class can delegate back to it.
+ * The class is intentionally independent of instagram4j; only OkHttp and the shared session model
+ * are used.
  */
-final class InstagramWebClient(client: Instagram4j) {
+final class InstagramWebClient(session: InstagramSession) {
   import InstagramWebClient.*
 
-  private def selfPk: String = client.session.split("[:%]").headOption.getOrElse("")
-  private def csrf: String = Option(client.crsf).getOrElse("")
-  private def cookie: String = sessionCookie(client.session, selfPk, csrf)
+  private def csrf: String = session.csrfToken
+  private def cookie: String = session.cookie
 
   // ---------------------------------------------------------------------------
   // GraphQL
@@ -83,7 +82,7 @@ final class InstagramWebClient(client: Instagram4j) {
       variables.put("reel_ids", jsonArrayOf(user.userId))
       variables.put("first", 10)
 
-      val response = queryGraphQL(Constants.GraphQl.STORY, variables)
+      val response = queryGraphQL(StoryDocId, variables)
       parseStories(response, Map(user.userId -> user.folderName)).headOption
         .getOrElse(UserStories(user, List.empty))
     } match {
@@ -96,14 +95,14 @@ final class InstagramWebClient(client: Instagram4j) {
   def fetchHighlights(user: User): UserHighLightStoryMedias =
     Try {
       val highlightsResponse = queryGraphQL(
-        Constants.GraphQl.HIGHLIGHTS,
+        HighlightsDocId,
         new JSONObject().put("user_id", user.userId)
       )
       val highlightIds = parseHighlightIds(highlightsResponse)
 
       val medias =
         if (highlightIds.isEmpty) List.empty[HighLightStoryMedia]
-        else parseHighlightMedias(queryGraphQL(Constants.GraphQl.STORY, storyVariables(highlightIds)))
+        else parseHighlightMedias(queryGraphQL(StoryDocId, storyVariables(highlightIds)))
 
       UserHighLightStoryMedias(user, medias)
     } match {
@@ -119,7 +118,7 @@ final class InstagramWebClient(client: Instagram4j) {
       val variables = profilePostsVariables(user)
 
       val body = new FormBody.Builder()
-        .add("av", selfPk)
+        .add("av", session.userId)
         .add("fb_dtsg", fbDtsg)
         .add("lsd", lsd)
         .add("fb_api_caller_class", "RelayModern")
@@ -196,6 +195,32 @@ final class InstagramWebClient(client: Instagram4j) {
       }
     }.getOrElse(List.empty)
 
+  /**
+   * Fetches one page of the authenticated account's `following` list.
+   *
+   * Reimplementation of instagram4j's `ProfilePaginator` against the web endpoint, because the
+   * library is no longer a dependency.
+   *
+   * @param cursor `next_max_id` returned by the previous page, or `None` for the first page.
+   * @return the users on this page and the cursor for the next page, if any.
+   */
+  def fetchFollowingPage(cursor: Option[String]): (List[User], Option[String]) = {
+    val query = cursor.fold("?count=50")(value => s"?count=50&maxId=$value")
+    val request = jsonHeaders(
+      new Request.Builder().url(s"$WebBase/api/v1/friendships/${session.userId}/following/$query")
+    )
+      .header("x-csrftoken", csrf)
+      .header("cookie", cookie)
+      .get()
+      .build()
+
+    val (status, responseBody) = InstagramHttpClient.execute(request)
+    if (status < 200 || status >= 300) {
+      throw new java.io.IOException(s"Failed to fetch following page: HTTP $status")
+    }
+    parseFollowingPage(new JSONObject(responseBody))
+  }
+
   // ---------------------------------------------------------------------------
   // Web tokens (`fb_dtsg` / `lsd`) required by `/api/graphql`
   // ---------------------------------------------------------------------------
@@ -225,10 +250,7 @@ final class InstagramWebClient(client: Instagram4j) {
   // HTTP plumbing
   // ---------------------------------------------------------------------------
 
-  private def execute(request: Request): (Int, String) =
-    Using.resource(Utils.client.newCall(request).execute()) { response =>
-      (response.code(), Option(response.body()).map(_.string()).getOrElse(""))
-    }
+  private def execute(request: Request): (Int, String) = InstagramHttpClient.execute(request)
 
   private def jsonHeaders(builder: Request.Builder): Request.Builder =
     baseHeaders(builder)
@@ -289,17 +311,14 @@ object InstagramWebClient {
   private val WebBase = "https://www.instagram.com"
   private val GraphQlUrl = s"$WebBase/graphql/query"
   private val ApiGraphQlUrl = s"$WebBase/api/graphql"
+  private val StoryDocId = "9558504827580036"
+  private val HighlightsDocId = "9719220061527365"
   private val ProfilePostsDocId = "30543471925243353"
   private val ProfilePostsFriendlyName = "PolarisProfilePostsQuery"
   private val HtmlAccept =
     "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
 
   private var cachedWebTokens: Option[(String, String)] = None
-
-  private def sessionCookie(sessionId: String, selfPk: String, csrf: String): String = {
-    val csrfPart = if (csrf.nonEmpty) s"; csrftoken=$csrf" else ""
-    s"sessionid=$sessionId; ds_user_id=$selfPk$csrfPart"
-  }
 
   private def jsonArrayOf(values: String*): JSONArray = {
     val array = new JSONArray()

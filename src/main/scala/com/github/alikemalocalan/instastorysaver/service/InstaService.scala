@@ -1,11 +1,9 @@
 package com.github.alikemalocalan.instastorysaver.service
 
 import com.github.alikemalocalan.instastorysaver.model.*
-import com.github.alikemalocalan.instastorysaver.service.web.InstagramWebClient
-import com.instagram4j.web.Instagram4j
+import com.github.alikemalocalan.instastorysaver.service.web.{InstagramSession, InstagramWebClient}
 import org.slf4j.{Logger, LoggerFactory}
 
-import scala.jdk.CollectionConverters.*
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -15,42 +13,45 @@ import scala.util.{Failure, Success, Try}
 object InstaService {
   private val logger: Logger = LoggerFactory.getLogger(getClass)
 
-  private def webClient(using client: Instagram4j): InstagramWebClient =
-    new InstagramWebClient(client)
+  private def webClient(using session: InstagramSession): InstagramWebClient =
+    new InstagramWebClient(session)
 
-  def fromSession(sessionId: String, csrfToken: String, username: String = ""): Instagram4j =
-    LoginService.fromSession(sessionId, csrfToken, username)
+  def fromSession(sessionId: String, csrfToken: String, username: String = ""): InstagramSession = {
+    logger.info(
+      s"Initializing Instagram session for ${if (username.nonEmpty) username else "user"}..."
+    )
+    InstagramSession(sessionId.trim, csrfToken.trim, username)
+  }
 
-  def fetchFollowingUsersFromApi()(using client: Instagram4j): List[User] =
+  def fetchFollowingUsersFromApi()(using session: InstagramSession): List[User] =
     Try {
-      val selfPk = client.session.split("[:%]").headOption.getOrElse("")
-      logger.info(s"Fetching following users from Instagram for account ID $selfPk...")
+      logger.info(s"Fetching following users from Instagram for account ID ${session.userId}...")
 
-      val paginator =
-        new com.instagram4j.web.paginators.ProfilePaginator(client.session, client.crsf, selfPk, "following", null)
+      val web = webClient
       val seenPks = scala.collection.mutable.Set[String]()
       val allUsers = scala.collection.mutable.ListBuffer[User]()
 
+      var cursor: Option[String] = None
       var hasMore = true
       var pageCount = 0
       val maxPages = 200
 
-      while (hasMore && paginator.hasNext && pageCount < maxPages) {
+      while (hasMore && pageCount < maxPages) {
         pageCount += 1
         if (pageCount > 1) {
           Thread.sleep(400)
         }
-        val pageList = paginator.next()
-        if (pageList == null || pageList.isEmpty) {
+
+        val (pageUsers, nextCursor) = web.fetchFollowingPage(cursor)
+        val newUsers = pageUsers.filter(user => user.userId.nonEmpty && seenPks.add(user.userId))
+
+        if (pageUsers.isEmpty || newUsers.isEmpty) {
           hasMore = false
         } else {
-          val newProfiles = pageList.asScala.filter(p => p != null && p.pk != null && seenPks.add(p.pk)).toList
-          if (newProfiles.isEmpty) {
-            hasMore = false
-          } else {
-            logger.info(s"Loaded ${newProfiles.size} following users (page $pageCount, total: ${seenPks.size})...")
-            newProfiles.foreach(p => allUsers += User(p.username, p.pk))
-          }
+          logger.info(s"Loaded ${newUsers.size} following users (page $pageCount, total: ${seenPks.size})...")
+          allUsers ++= newUsers
+          cursor = nextCursor
+          hasMore = nextCursor.nonEmpty
         }
       }
 
@@ -64,10 +65,10 @@ object InstaService {
         List.empty[User]
     }
 
-  def ensureFollowingCsvExists(destinationFolder: String)(using client: Instagram4j): Unit =
+  def ensureFollowingCsvExists(destinationFolder: String)(using session: InstagramSession): Unit =
     CsvService.loadOrCreateFollowing(destinationFolder, () => fetchFollowingUsersFromApi())
 
-  private def getFeedStories(destinationFolder: String = "")(using client: Instagram4j): List[UserStories] = {
+  private def getFeedStories(destinationFolder: String = "")(using session: InstagramSession): List[UserStories] = {
     logger.info("Fetching active stories from reels tray...")
 
     val trayReels = webClient.fetchReelsTray()
@@ -122,7 +123,7 @@ object InstaService {
   def saveStories(
       destinationFolder: String,
       maxConcurrency: Int = 3
-  )(using client: Instagram4j): Unit = {
+  )(using session: InstagramSession): Unit = {
     val activeUserStories = getFeedStories(destinationFolder)
 
     if (activeUserStories.nonEmpty) {
@@ -145,7 +146,7 @@ object InstaService {
       destinationFolder: String,
       maxConcurrency: Int = 3,
       intervalDays: Int = 7
-  )(using client: Instagram4j): Unit = {
+  )(using session: InstagramSession): Unit = {
     logger.info(s"Checking feed posts for followed users (${intervalDays}-day interval check via CSV)...")
     val records = CsvService.loadOrCreateFollowing(destinationFolder, () => fetchFollowingUsersFromApi())
 
@@ -196,7 +197,7 @@ object InstaService {
       destinationFolder: String,
       maxConcurrency: Int = 3,
       intervalDays: Int = 7
-  )(using client: Instagram4j): Unit = {
+  )(using session: InstagramSession): Unit = {
     logger.info(s"Checking highlights for followed users (${intervalDays}-day interval check via CSV)...")
     val records = CsvService.loadOrCreateFollowing(destinationFolder, () => fetchFollowingUsersFromApi())
 

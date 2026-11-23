@@ -7,9 +7,7 @@ ThisBuild / scalaVersion := "3.3.8"
 ThisBuild / version := "1.0.0"
 ThisBuild / resolvers += "jitpack" at "https://jitpack.io"
 
-val instagram4jVersion = "3.0"
-val jacksonVersion = "2.22.3"
-val jacksonAnnotationsVersion = "2.22"
+val jsonAndroidVersion = "1.0"
 val okhttpVersion = "5.5.0"
 val okioVersion = "3.18.2"
 val kotlinVersion = "2.4.20"
@@ -24,10 +22,7 @@ lazy val root = project
     name := "instastorysaver",
     resolvers += "jitpack" at "https://jitpack.io",
     libraryDependencies ++= Seq(
-      ("com.github.instagram4j.instagram4j" % "web" % instagram4jVersion).exclude("com.squareup.okhttp3", "okhttp"),
-      "com.fasterxml.jackson.core" % "jackson-databind" % jacksonVersion,
-      "com.fasterxml.jackson.core" % "jackson-core" % jacksonVersion,
-      "com.fasterxml.jackson.core" % "jackson-annotations" % jacksonAnnotationsVersion,
+      "com.github.ErrorxCode" % "json-android" % jsonAndroidVersion,
       "com.squareup.okhttp3" % "okhttp-jvm" % okhttpVersion,
       "com.squareup.okio" % "okio" % okioVersion,
       "org.jetbrains.kotlin" % "kotlin-stdlib" % kotlinVersion,
@@ -36,9 +31,6 @@ lazy val root = project
       "org.slf4j" % "slf4j-simple" % slf4jVersion
     ),
     dependencyOverrides ++= Seq(
-      "com.fasterxml.jackson.core" % "jackson-databind" % jacksonVersion,
-      "com.fasterxml.jackson.core" % "jackson-core" % jacksonVersion,
-      "com.fasterxml.jackson.core" % "jackson-annotations" % jacksonAnnotationsVersion,
       "com.squareup.okio" % "okio" % okioVersion,
       "com.squareup.okio" % "okio-jvm" % okioVersion,
       "org.jetbrains.kotlin" % "kotlin-stdlib" % kotlinVersion

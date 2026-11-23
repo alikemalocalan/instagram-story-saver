@@ -1,41 +1,46 @@
 package com.github.alikemalocalan.instastorysaver.service.web
 
 import com.github.alikemalocalan.instastorysaver.service.web.dto.InstagramDtos.*
-import io.circe.Decoder
-import io.circe.generic.semiauto.*
+import upickle.default.*
 
-/** All Circe decoders for Instagram web responses, kept in one place for fast agent updates. */
+/**
+ * Central place for all uPickle `ReadWriter`s.
+ *
+ * DTOs stay plain typed case classes; uPickle derives the JSON codecs here via macros. The
+ * recursive carousel shape needs `MediaItem` to be a lazy given.
+ */
 object InstagramDecoders {
-  given [A: Decoder]: Decoder[Node[A]] = deriveDecoder
-  given [A: Decoder]: Decoder[Edge[A]] = deriveDecoder
+  type RW[A] = ReadWriter[A]
 
-  // MediaItem <-> Edge[MediaItem] is recursive; lazy initialization breaks the cycle.
-  lazy given mediaItemDecoder: Decoder[MediaItem] = deriveDecoder[MediaItem]
+  given [A: RW]: RW[Node[A]] = macroRW
+  given [A: RW]: RW[Edge[A]] = macroRW
 
-  given Decoder[ResourceCandidate] = deriveDecoder
-  given Decoder[ImageCandidate] = deriveDecoder
-  given Decoder[ImageVersions] = deriveDecoder
-  given Decoder[VideoCandidate] = deriveDecoder
-  given Decoder[XdtViewer] = deriveDecoder
-  given Decoder[UserRef] = deriveDecoder
-  given Decoder[StoryNode] = deriveDecoder
-  given Decoder[IdNode] = deriveDecoder
-  given Decoder[ReelsConnection] = deriveDecoder
-  given Decoder[StoriesData] = deriveDecoder
-  given Decoder[StoriesResponse] = deriveDecoder
-  given Decoder[HighlightsData] = deriveDecoder
-  given Decoder[HighlightsResponse] = deriveDecoder
-  given Decoder[FeedData] = deriveDecoder
-  given Decoder[FeedResponse] = deriveDecoder
-  given Decoder[MediaInfoResponse] = deriveDecoder
-  given Decoder[TrayReel] = deriveDecoder
-  given Decoder[TrayResponse] = deriveDecoder
-  given Decoder[FollowingUser] = deriveDecoder
-  given Decoder[FollowingData] = deriveDecoder
-  given Decoder[FollowingResponse] = deriveDecoder
-  given Decoder[ReelsMediaItem] = deriveDecoder
-  given Decoder[ReelsMediaState] = deriveDecoder
-  given Decoder[StoriesPageResponse] = deriveDecoder
-  given Decoder[GraphQlError] = deriveDecoder
-  given Decoder[GraphQlErrorResponse] = deriveDecoder
+  given RW[XdtViewer] = macroRW
+  given RW[UserRef] = macroRW
+  given RW[VideoCandidate] = macroRW
+  given RW[ResourceCandidate] = macroRW
+  given RW[ImageCandidate] = macroRW
+  given RW[ImageVersions] = macroRW
+  lazy given mediaItemRW: RW[MediaItem] = macroRW
+
+  given RW[StoryNode] = macroRW
+  given RW[IdNode] = macroRW
+  given RW[ReelsConnection] = macroRW
+  given RW[StoriesData] = macroRW
+  given RW[StoriesResponse] = macroRW
+  given RW[HighlightsData] = macroRW
+  given RW[HighlightsResponse] = macroRW
+  given RW[FeedData] = macroRW
+  given RW[FeedResponse] = macroRW
+  given RW[MediaInfoResponse] = macroRW
+  given RW[TrayReel] = macroRW
+  given RW[TrayResponse] = macroRW
+  given RW[FollowingUser] = macroRW
+  given RW[FollowingData] = macroRW
+  given RW[FollowingResponse] = macroRW
+  given RW[ReelsMediaItem] = macroRW
+  given RW[ReelsMediaState] = macroRW
+  given RW[StoriesPageResponse] = macroRW
+  given RW[GraphQlError] = macroRW
+  given RW[GraphQlErrorResponse] = macroRW
 }

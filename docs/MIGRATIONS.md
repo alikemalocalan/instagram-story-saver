@@ -1,9 +1,9 @@
 # Migration Notes
 
-This document summarizes the two dependency migrations in this project and the related build/native-image settings.
+This document summarizes the dependency migrations in this project and the related build/native-image settings.
 
 - OkHttp → Java HTTP client (`java.net.http.HttpClient`)
-- json-android → Circe JSON (`io.circe`)
+- json-android → uPickle JSON (`com.lihaoyi:upickle`)
 
 Preserved behavior: story/feed/highlight downloads, web session cookie/CSRF flow, following-list pagination, GraphQL "Not Found" handling, download retry/backoff and safe writes via `.part` + atomic move.
 
@@ -53,7 +53,7 @@ val request = InstagramHttpClient.requestBuilder("https://www.instagram.com/grap
   .setHeader("content-type", InstagramHttpClient.FormContentType)
   .setHeader("cookie", session.cookie)
   .POST(HttpRequest.BodyPublishers.ofString(
-    InstagramHttpClient.formBody(Seq("doc_id" -> docId, "variables" -> variables.noSpaces))
+    InstagramHttpClient.formBody(Seq("doc_id" -> docId, "variables" -> ujson.write(variables)))
   ))
   .build()
 
@@ -62,43 +62,42 @@ val (status, body) = InstagramHttpClient.execute(request)
 
 ---
 
-## 2. JSON layer: json-android → Circe
+## 2. JSON layer: json-android → uPickle
 
 ### Dependencies removed / added
 
 | Status | Dependency |
 | :--- | :--- |
 | Removed | `com.github.ErrorxCode:json-android:1.0` (JitPack) |
-| Added | `io.circe:circe-core:0.14.17` |
-| Added | `io.circe:circe-parser:0.14.17` |
-| Added | `io.circe:circe-generic:0.14.17` |
+| Removed | `io.circe:circe-core/parser/generic:0.14.17` (Cats + Jawn chain) |
+| Added | `com.lihaoyi:upickle:4.4.3` |
 
 ### Mapping
 
-| json-android | Circe / typed DTO layer |
+| json-android | uPickle / typed DTO layer |
 | :--- | :--- |
-| `JSONObject` / `JSONArray` | `io.circe.Json` for parsing; typed `case class` DTOs for response shapes |
-| `new JSONObject(raw)` | `InstagramJsonParser.parseJson(raw)` → `Option[Json]`, then `decodeDto[A]` |
-| `obj.optJSONObject("x")` | `Option[...]` field on the matching DTO, populated by `deriveDecoder` |
-| `obj.optJSONArray("x")` | `Option[List[A]]` field, normalized with `values(...)` |
-| `obj.optString("x", "")` | `Option[String]` field, normalized with `nonEmpty(...)` |
+| `JSONObject` / `JSONArray` | `ujson.Value` for intermediate JSON; typed `case class` DTOs for response shapes |
+| `new JSONObject(raw)` | `InstagramJsonParser.parseJson(raw)` → `Option[Value]`, then `decodeDto[A]` |
+| `obj.optJSONObject("x")` | `Option[...] = None` DTO field, populated by `macroRW` |
+| `obj.optJSONArray("x")` | `Option[List[A]] = None` field, normalized with `values(...)` |
+| `obj.optString("x", "")` | `Option[String] = None` field, normalized with `nonEmpty(...)` |
 | `obj.optInt/optLong("x")` | `Option[Int]` / `Option[Long]` fields |
-| `JSONObject.NULL` | `Json.Null` / `None` |
-| `jsonObject.toString` | `json.noSpaces` |
-| `new JSONArray().put(...)` | `Json.arr(...)` or typed DTO lists |
+| `JSONObject.NULL` | `ujson.Null` / `None` |
+| `jsonObject.toString` | `ujson.write(value)` |
+| `new JSONArray().put(...)` | `ujson.Arr(...)` or typed DTO lists |
 | `obj.getJSONArray("errors")` | `GraphQlErrorResponse.errors: Option[List[GraphQlError]]` |
 
 Shared helpers (`parseJson`, `decodeDto`, `values`, `nonEmpty`, `url`, `warnOnMissingShape`) keep all parsing code independent of HTTP and free of manual key traversal.
 
 ### Error and empty-data behavior
 
-- Malformed JSON now logs a warning and returns `None` instead of throwing; callers continue with `Json.obj()`.
+- Malformed JSON now logs a warning and returns `None` instead of throwing; callers continue with `ujson.Obj()`.
 - If the GraphQL `errors` array contains `summary: "Not Found"`, an empty reels response is produced; other errors become `IOException`.
 - If `xdt_viewer.user` is missing or null, the session is considered expired and `IllegalStateException` is thrown.
 
 ### Stories HTML parsing fix
 
-The preloaded state on `/stories/<user>/` sometimes contains extra root fields such as `,"extensions":...` after the main JSON. The old approach parsed the text up to `</script>` as-is; Circe treated it as invalid JSON.
+The preloaded state on `/stories/<user>/` sometimes contains extra root fields such as `,"extensions":...` after the main JSON. The old approach parsed the text up to `</script>` as-is; a strict JSON parser treats it as invalid JSON.
 
 `extractJsonObject` now finds the end of the object starting at `{` by counting balanced braces while respecting strings and escapes, ignoring trailing fields. Story counts are therefore correct instead of `0` for users present in the tray.
 
@@ -133,7 +132,9 @@ For GraalVM native-image, `android.org.json,okio` was removed from build-time in
 
 `--enable-http` / `--enable-https` are required by `java.net.http.HttpClient` and were kept.
 
-Circe is **not** initialized at build time. Adding `io.circe` there made GraalVM pull Scala/cats singletons (`Vector0$`, `BigInt$`, `cats.Eval$`, ...) into the image heap unintentionally. `--strict-image-heap` was also removed: with Circe it cascaded into `io.circe.Json$JNumber` and `scala.collection.immutable.Vector0$` errors. The ARM64 Linux bundle now builds successfully with these settings.
+In the earlier Circe setup, build-time initialization pulled Cats/Scala singletons into the image heap and `--strict-image-heap` cascaded into Circe/Jawn errors. Those options were removed. uPickle needs no build-time initialization and keeps the GraalVM configuration minimal.
+
+The compiler source level is pinned with `-source:3.9`. Assembly discards Scala 3 TASTy metadata (`*.tasty`) via `assemblyMergeStrategy`: it is compile-time only and not needed at runtime or by native-image. Replacing Circe with uPickle and keeping the TASTy rule reduced the fat JAR from 14.1 MB / 7,789 entries to **8.0 MB / 4,747 entries** (4,661 classes, 0 TASTy).
 
 ---
 
@@ -168,22 +169,22 @@ A typical change touches: `GraphQlContract.scala` + the relevant DTO + fixture +
 
 ---
 
-## 6. Typed DTO + Circe Decoder layer
+## 6. Typed DTO + uPickle codec layer
 
 Manual JSON traversal with `objField` / `arrField` / `str` / `int` / `long` was removed from `InstagramJsonParser`. Wire shapes now live in typed models, and domain conversion is a separate layer.
 
 | File | Purpose |
 | :--- | :--- |
-| `service/web/dto/InstagramDtos.scala` | `case class` mirrors of Instagram JSON fields; all fields are `Option` |
-| `service/web/InstagramDecoders.scala` | All `Decoder`s defined in one place with `deriveDecoder` |
-| `service/web/InstagramJsonParser.scala` | Decoder selection, DTO → domain conversion, `[GRAPHQL-SHAPE]` warnings |
+| `service/web/dto/InstagramDtos.scala` | `case class` mirrors of Instagram JSON fields; optional fields are `Option[...] = None` |
+| `service/web/InstagramDecoders.scala` | All uPickle `ReadWriter`s defined in one place with `macroRW` |
+| `service/web/InstagramJsonParser.scala` | Codec selection, DTO → domain conversion, `[GRAPHQL-SHAPE]` warnings |
 
 Key points:
 
-- Derived Circe decoders **do not apply case-class defaults**. Missing fields must decode to `None`; the `values(...)` helper converts them to `Nil` at the domain boundary. That is why DTO fields use `Option[List[A]]`.
-- Fields such as `pk` / reel `id` / `media_ids` may arrive as strings or numbers; a single `StringOrNumber` decoder normalizes them.
-- `MediaItem` → `Edge[MediaItem]` (carousel) is recursive, so `mediaItemDecoder` is declared as a `lazy given`.
+- uPickle only tolerates missing keys when the case class field has a default, so every optional DTO field uses `Option[...] = None`. The `values(...)` helper converts `None` to `Nil` at the domain boundary.
+- Fields such as `pk` / reel `id` / `media_ids` may arrive as strings or numbers; `StringOrNumber` uses uPickle's `Reader[String]`, which preserves the raw JSON number text.
+- `MediaItem` → `Edge[MediaItem]` (carousel) is recursive, so `mediaItemRW` is declared as a `lazy given`.
 - Use `import InstagramDecoders.{given, *}` so the `given`s are visible; a plain `import InstagramDecoders.*` is not enough.
-- GraphQL `errors` are now decoded with the `GraphQlErrorResponse` DTO; "Not Found" behavior is unchanged.
+- GraphQL `errors` are decoded with the `GraphQlErrorResponse` DTO; "Not Found" behavior is unchanged.
 
 Additional regression test: the `stories_wrong_shape.json` fixture verifies that `parseStories` does not throw on an unexpected response shape.

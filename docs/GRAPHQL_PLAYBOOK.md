@@ -22,7 +22,7 @@ Log prefixes are stable:
 | Highlights show 0 | Highlights doc id or `data.highlights.edges` path changed | `GraphQlContract.Highlights`, fixtures `highlights.json` / `highlight_medias.json` |
 | Following is empty or pagination stops | `data.users` / `data.next_max_id` fields changed | `GraphQlContract.Following`, `parseFollowingPage`, fixture `following.json` |
 | Media URLs not found | `video_versions` / `image_versions2` / `display_url` shape changed | `InstagramDtos.MediaItem` / `VideoCandidate` / `ResourceCandidate`, then `bestVideoUrl` / `bestImageUrl` |
-| `Missing required field` warning | A new required field was added, or a field type changed | Make the DTO field `Option[...]`; `InstagramDecoders` already derives the decoder |
+| `missing keys in dictionary` warning | A new field was added without a default, or a field type changed | Make the DTO field `Option[...] = None`; `InstagramDecoders` already derives the codec |
 
 ---
 
@@ -33,7 +33,7 @@ Log prefixes are stable:
 3. **Capture a real response:** copy the request in the browser, then strip cookies, csrf, tokens and real media URLs.
 4. **Add/update a fixture:** put a sanitized example under `src/test/resources/graphql/<endpoint>.json`. Use `https://cdn.example.com/...` URLs and dummy usernames.
 5. **Update the contract:** if a doc id / URL / operation changed, edit **only** `GraphQlContract.scala`. `InstagramWebClient` uses the contract aliases.
-6. **Update the DTO:** add the new field as `Option[...]` to the relevant `case class` in `dto/InstagramDtos.scala` (Circe ignores case-class defaults). Reuse `StringOrNumber` for string|number fields. For a new DTO, add one `given ... = deriveDecoder` line in `InstagramDecoders.scala`. Do not write raw `Json` traversal.
+6. **Update the DTO:** add the new field as `Option[...] = None` to the relevant `case class` in `dto/InstagramDtos.scala` (uPickle needs the default for missing keys). Reuse `StringOrNumber` for string|number fields. For a new DTO, add one `given ... = macroRW` line in `InstagramDecoders.scala`. Do not write raw `ujson.Value` traversal.
 7. **Update the domain conversion:** only in `InstagramJsonParser`, map the new field to the domain model. The `values(...)` helper turns missing lists into `Nil`.
 8. **Update the test:** fixture and expected values must change in the same commit. Update the `GraphQlContract` doc id assertions deliberately.
 9. **Verify:** `sbt "clean; compile; test; assembly"`.
@@ -54,9 +54,9 @@ When adding a fixture or log example:
 
 ## 4. Golden rules for a small diff
 
-- Do not add a new HTTP client or JSON library; Java HttpClient and Circe are enough.
+- Do not add a new HTTP client or JSON library; Java HttpClient and uPickle are enough.
 - Do not hide doc ids inside `InstagramWebClient`; `GraphQlContract` is the single source.
-- Do **not** add `= Nil` / `= ""` defaults to DTO fields; Circe does not apply them and reports `Missing required field`. Use `Option`.
+- Use `Option[...] = None` on every optional DTO field; uPickle reports `missing keys in dictionary` otherwise. Do not use `= Nil` / `= ""` on a non-`Option` field.
 - Use `import InstagramDecoders.{given, *}` instead of `import InstagramDecoders.*`; otherwise the `given`s are not in implicit scope.
 - Do not silently return an empty list in the parser; the `[GRAPHQL-SHAPE]` warning already records an unexpected path.
 - For `parseStoriesPage`, do not parse up to `</script>`; `extractJsonObject` scans balanced braces.

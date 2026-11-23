@@ -2,8 +2,11 @@ package com.github.alikemalocalan.instastorysaver.service.web
 
 import com.github.alikemalocalan.instastorysaver.model.*
 import com.github.alikemalocalan.instastorysaver.service.web.dto.InstagramDtos.*
-import io.circe.{Decoder, Json}
 import org.slf4j.{Logger, LoggerFactory}
+import ujson.Value
+import upickle.default.{ReadWriter, read}
+
+import scala.util.{Failure, Success, Try}
 
 /**
  * Converts typed Instagram DTOs into domain models.
@@ -28,27 +31,30 @@ object InstagramJsonParser {
   def isValidHttpUrl(url: String): Boolean =
     url != null && (url.trim.startsWith("http://") || url.trim.startsWith("https://"))
 
-  def parseJson(raw: String, context: String = "response"): Option[Json] =
-    io.circe.parser.parse(raw) match {
-      case Right(json) => Some(json)
-      case Left(error) =>
+  def parseJson(raw: String, context: String = "response"): Option[Value] =
+    Try(ujson.read(raw)) match {
+      case Success(json) => Some(json)
+      case Failure(error) =>
         logger.warn(s"Could not parse $context JSON: ${error.getMessage}")
         None
     }
 
-  private def decodeDto[A: Decoder](json: Json, context: String): Option[A] =
-    json.as[A] match {
-      case Right(value) => Some(value)
-      case Left(error) =>
-        logger.warn(s"[GRAPHQL-SHAPE] $context decode failed: ${error.getMessage}")
+  def decodeDto[A: ReadWriter](json: Value, context: String): Option[A] =
+    Try(read[A](json)) match {
+      case Success(value) => Some(value)
+      case Failure(error) =>
+        val reason = Option(error.getCause).map(_.getMessage).getOrElse(error.getMessage)
+        logger.warn(s"[GRAPHQL-SHAPE] $context decode failed: ${error.getMessage} | $reason")
         None
     }
 
   /** Stable warning used by AI agents to find the parser affected by an Instagram change. */
-  private def warnOnMissingShape(context: String, json: Json, pathPresent: Boolean): Unit =
-    if (!pathPresent && json.asObject.exists(_.nonEmpty)) {
-      val keys = json.asObject.get.keys.toList.sorted.take(20).mkString(",")
-      logger.warn(s"[GRAPHQL-SHAPE] $context: expected path missing; topLevelKeys=[$keys]")
+  private def warnOnMissingShape(context: String, json: Value, pathPresent: Boolean): Unit =
+    if (!pathPresent) {
+      json.objOpt.filter(_.nonEmpty).foreach { obj =>
+        val keys = obj.keys.toList.sorted.take(20).mkString(",")
+        logger.warn(s"[GRAPHQL-SHAPE] $context: expected path missing; topLevelKeys=[$keys]")
+      }
     }
 
   private def url(value: Option[String]): Option[String] =
@@ -115,7 +121,7 @@ object InstagramJsonParser {
    *
    * @param userMap fallback user id -> username map, used when the response omits the user object.
    */
-  def parseStories(response: Json, userMap: Map[String, String]): List[UserStories] =
+  def parseStories(response: Value, userMap: Map[String, String]): List[UserStories] =
     decodeDto[StoriesResponse](response, GraphQlContract.Stories.operation) match {
       case None => List.empty
       case Some(envelope) =>
@@ -156,7 +162,7 @@ object InstagramJsonParser {
     }
 
   /** Extracts highlight reel ids from the `highlights` GraphQL response. */
-  def parseHighlightIds(response: Json): List[String] =
+  def parseHighlightIds(response: Value): List[String] =
     decodeDto[HighlightsResponse](response, GraphQlContract.Highlights.operation) match {
       case None => List.empty
       case Some(envelope) =>
@@ -166,7 +172,7 @@ object InstagramJsonParser {
     }
 
   /** Parses highlight media from a stories (`STORY` doc id) response. */
-  def parseHighlightMedias(response: Json): List[HighLightStoryMedia] =
+  def parseHighlightMedias(response: Value): List[HighLightStoryMedia] =
     decodeDto[StoriesResponse](response, GraphQlContract.Stories.operation) match {
       case None => List.empty
       case Some(envelope) =>
@@ -180,7 +186,7 @@ object InstagramJsonParser {
     }
 
   /** Parses feed posts from the `xdt_api__v1__feed__user_timeline_graphql_connection` shape. */
-  def parseFeedMedias(response: Json): List[Media] =
+  def parseFeedMedias(response: Value): List[Media] =
     decodeDto[FeedResponse](response, GraphQlContract.ProfilePosts.operation) match {
       case None => List.empty
       case Some(envelope) =>
@@ -189,7 +195,7 @@ object InstagramJsonParser {
         mediaItems(values(connection.flatMap(_.edges)).map(_.node))
     }
 
-  def parseMediaInfo(response: Json): Option[Media] =
+  def parseMediaInfo(response: Value): Option[Media] =
     decodeDto[MediaInfoResponse](response, GraphQlContract.MediaInfo.operation) match {
       case None => None
       case Some(envelope) =>
@@ -202,7 +208,7 @@ object InstagramJsonParser {
   // Plain endpoints / embedded HTML
   // ---------------------------------------------------------------------------
 
-  def parseReelsTray(response: Json): List[(User, List[String])] =
+  def parseReelsTray(response: Value): List[(User, List[String])] =
     decodeDto[TrayResponse](response, GraphQlContract.ReelsTray.operation) match {
       case None => List.empty
       case Some(envelope) =>
@@ -220,7 +226,7 @@ object InstagramJsonParser {
     }
 
   /** Parses one page of the `friendships/<id>/following` response. */
-  def parseFollowingPage(response: Json): (List[User], Option[String]) =
+  def parseFollowingPage(response: Value): (List[User], Option[String]) =
     decodeDto[FollowingResponse](response, GraphQlContract.Following.operation) match {
       case None => (List.empty, None)
       case Some(envelope) =>

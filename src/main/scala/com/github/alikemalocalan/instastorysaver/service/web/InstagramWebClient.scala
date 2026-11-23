@@ -4,7 +4,7 @@ import com.github.alikemalocalan.instastorysaver.model.*
 import com.github.alikemalocalan.instastorysaver.service.HttpConstants
 import com.github.alikemalocalan.instastorysaver.service.web.InstagramJsonParser.*
 import com.github.alikemalocalan.instastorysaver.service.web.dto.InstagramDtos.*
-import io.circe.Json
+import ujson.Value
 import org.slf4j.{Logger, LoggerFactory}
 
 import java.net.http.HttpRequest
@@ -13,7 +13,7 @@ import scala.util.{Failure, Success, Try}
 /**
  * Low-level client for the Instagram web API (`www.instagram.com`).
  *
- * Uses the shared Java HTTP client and Circe JSON objects. The browser-style headers and cookies
+ * Uses the shared Java HTTP client and uPickle JSON values. The browser-style headers and cookies
  * are required for a web-issued session to be accepted by Instagram.
  */
 final class InstagramWebClient(session: InstagramSession) {
@@ -28,9 +28,9 @@ final class InstagramWebClient(session: InstagramSession) {
   // ---------------------------------------------------------------------------
 
   /** Executes a web GraphQL query by doc id. */
-  def queryGraphQL(docId: String, variables: Json): Json = {
+  def queryGraphQL(docId: String, variables: Value): Value = {
     val body = InstagramHttpClient.formBody(
-      Seq("doc_id" -> docId, "variables" -> variables.noSpaces)
+      Seq("doc_id" -> docId, "variables" -> ujson.write(variables))
     )
 
     val request = jsonHeaders(InstagramHttpClient.requestBuilder(GraphQlUrl))
@@ -46,8 +46,8 @@ final class InstagramWebClient(session: InstagramSession) {
       throw new java.io.IOException(s"GraphQL request failed with HTTP $status: $responseBody")
     }
 
-    val json = parseJson(responseBody, "GraphQL response").getOrElse(Json.obj())
-    val errors = json.as[GraphQlErrorResponse].toOption.flatMap(_.errors).getOrElse(Nil)
+    val json = parseJson(responseBody, "GraphQL response").getOrElse(ujson.Obj())
+    val errors = decodeDto[GraphQlErrorResponse](json, s"$docId errors").flatMap(_.errors).getOrElse(Nil)
     if (errors.nonEmpty) {
       logger.warn(s"[GRAPHQL-ERROR] $docId returned errors: ${responseBody.take(500)}")
       resolveGraphQlError(errors.head, responseBody)
@@ -58,7 +58,7 @@ final class InstagramWebClient(session: InstagramSession) {
    * Instagram reports "Not Found" for a reel that simply has no active stories, so those are
    * converted into an empty result instead of an error.
    */
-  private[web] def resolveGraphQlError(error: GraphQlError, rawBody: String): Json = {
+  private[web] def resolveGraphQlError(error: GraphQlError, rawBody: String): Value = {
     val summary = error.summary.map(_.trim).getOrElse("")
     val message = error.message.map(_.trim).filter(_.nonEmpty).getOrElse("Unknown error")
 
@@ -72,10 +72,10 @@ final class InstagramWebClient(session: InstagramSession) {
 
   def fetchStories(user: User): UserStories =
     Try {
-      val variables = Json.obj(
-        "initial_reel_id" -> Json.fromString(user.userId),
+      val variables = ujson.Obj(
+        "initial_reel_id" -> user.userId,
         "reel_ids" -> jsonArrayOf(user.userId),
-        "first" -> Json.fromInt(10)
+        "first" -> 10
       )
 
       val response = queryGraphQL(StoryDocId, variables)
@@ -92,7 +92,7 @@ final class InstagramWebClient(session: InstagramSession) {
     Try {
       val highlightsResponse = queryGraphQL(
         HighlightsDocId,
-        Json.obj("user_id" -> Json.fromString(user.userId))
+        ujson.Obj("user_id" -> user.userId)
       )
       val highlightIds = parseHighlightIds(highlightsResponse)
 
@@ -120,7 +120,7 @@ final class InstagramWebClient(session: InstagramSession) {
           "lsd" -> lsd,
           "fb_api_caller_class" -> "RelayModern",
           "fb_api_req_friendly_name" -> ProfilePostsFriendlyName,
-          "variables" -> variables.noSpaces,
+          "variables" -> ujson.write(variables),
           "doc_id" -> ProfilePostsDocId
         )
       )
@@ -140,7 +140,7 @@ final class InstagramWebClient(session: InstagramSession) {
         logger.warn(s"Could not get posts for user @${user.folderName}: HTTP $status")
         UserFeedMedias(user, List.empty)
       } else {
-        val medias = parseFeedMedias(parseJson(responseBody, "feed response").getOrElse(Json.obj()))
+        val medias = parseFeedMedias(parseJson(responseBody, "feed response").getOrElse(ujson.Obj()))
         logger.info(s"Loaded ${medias.size} feed posts for @${user.folderName}.")
         UserFeedMedias(user, medias)
       }
@@ -174,7 +174,7 @@ final class InstagramWebClient(session: InstagramSession) {
 
       val (status, responseBody) = execute(request)
       if (status < 200 || status >= 300) None
-      else parseMediaInfo(parseJson(responseBody, "media info response").getOrElse(Json.obj()))
+      else parseMediaInfo(parseJson(responseBody, "media info response").getOrElse(ujson.Obj()))
     }.toOption.flatten
 
   def fetchReelsTray(): List[(User, List[String])] =
@@ -190,7 +190,7 @@ final class InstagramWebClient(session: InstagramSession) {
         logger.warn(s"Failed to fetch reels tray: HTTP $status")
         List.empty
       } else {
-        parseReelsTray(parseJson(responseBody, "reels tray response").getOrElse(Json.obj()))
+        parseReelsTray(parseJson(responseBody, "reels tray response").getOrElse(ujson.Obj()))
       }
     }.getOrElse(List.empty)
 
@@ -214,7 +214,7 @@ final class InstagramWebClient(session: InstagramSession) {
     if (status < 200 || status >= 300) {
       throw new java.io.IOException(s"Failed to fetch following page: HTTP $status")
     }
-    parseFollowingPage(parseJson(responseBody, "following response").getOrElse(Json.obj()))
+    parseFollowingPage(parseJson(responseBody, "following response").getOrElse(ujson.Obj()))
   }
 
   // ---------------------------------------------------------------------------
@@ -276,27 +276,27 @@ final class InstagramWebClient(session: InstagramSession) {
       .setHeader("user-agent", HttpConstants.UserAgent)
       .setHeader("x-ig-app-id", HttpConstants.AppId)
 
-  private def profilePostsVariables(user: User): Json = {
-    val data = Json.obj(
-      "count" -> Json.fromInt(12),
-      "include_relationship_info" -> Json.fromBoolean(true),
-      "latest_besties_reel_media" -> Json.fromBoolean(true),
-      "latest_reel_media" -> Json.fromBoolean(true)
+  private def profilePostsVariables(user: User): Value = {
+    val data = ujson.Obj(
+      "count" -> 12,
+      "include_relationship_info" -> true,
+      "latest_besties_reel_media" -> true,
+      "latest_reel_media" -> true
     )
 
-    Json.obj(
-      "after" -> Json.Null,
-      "before" -> Json.Null,
+    ujson.Obj(
+      "after" -> ujson.Null,
+      "before" -> ujson.Null,
       "data" -> data,
-      "first" -> Json.fromInt(12),
-      "last" -> Json.Null,
-      "username" -> Json.fromString(user.folderName),
-      "__relay_internal__pv__PolarisMultiCaptionCarouselEnabledrelayprovider" -> Json.fromBoolean(false),
-      "__relay_internal__pv__PolarisShortDramaEnabledrelayprovider" -> Json.fromBoolean(false),
-      "__relay_internal__pv__PolarisSEOIsCrawlerrelayprovider" -> Json.fromBoolean(false),
-      "__relay_internal__pv__PolarisProductTagIndicatorEnabledrelayprovider" -> Json.fromBoolean(false),
-      "__relay_internal__pv__PolarisThreadsStyleCommentsEnabledrelayprovider" -> Json.fromBoolean(false),
-      "__relay_internal__pv__PolarisReelsRecroDebugOverlayEnabledrelayprovider" -> Json.fromBoolean(false)
+      "first" -> 12,
+      "last" -> ujson.Null,
+      "username" -> user.folderName,
+      "__relay_internal__pv__PolarisMultiCaptionCarouselEnabledrelayprovider" -> false,
+      "__relay_internal__pv__PolarisShortDramaEnabledrelayprovider" -> false,
+      "__relay_internal__pv__PolarisSEOIsCrawlerrelayprovider" -> false,
+      "__relay_internal__pv__PolarisProductTagIndicatorEnabledrelayprovider" -> false,
+      "__relay_internal__pv__PolarisThreadsStyleCommentsEnabledrelayprovider" -> false,
+      "__relay_internal__pv__PolarisReelsRecroDebugOverlayEnabledrelayprovider" -> false
     )
   }
 }
@@ -317,17 +317,17 @@ object InstagramWebClient {
 
   private var cachedWebTokens: Option[(String, String)] = None
 
-  private def jsonArrayOf(values: String*): Json =
-    Json.arr(values.map(Json.fromString)*)
+  private def jsonArrayOf(values: String*): Value =
+    ujson.Arr(values.map(value => ujson.Str(value))*)
 
-  private def storyVariables(highlightIds: List[String]): Json =
-    Json.obj(
-      "initial_reel_id" -> Json.fromString(highlightIds.head),
+  private def storyVariables(highlightIds: List[String]): Value =
+    ujson.Obj(
+      "initial_reel_id" -> highlightIds.head,
       "reel_ids" -> jsonArrayOf(highlightIds*),
-      "first" -> Json.fromInt(math.max(highlightIds.size, 10))
+      "first" -> math.max(highlightIds.size, 10)
     )
 
-  private val emptyReelsMediaResponse: Json =
+  private val emptyReelsMediaResponse: Value =
     parseJson("""{"data":{"xdt_api__v1__feed__reels_media__connection":{"edges":[]}}}""")
-      .getOrElse(Json.obj())
+      .getOrElse(ujson.Obj())
 }

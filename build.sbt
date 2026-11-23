@@ -6,7 +6,7 @@ ThisBuild / organization := "com.github.alikemalocalan"
 ThisBuild / scalaVersion := "3.9.0"
 ThisBuild / version := "1.0.0"
 
-val circeVersion = "0.14.17"
+val upickleVersion = "4.4.3"
 val configVersion = "1.4.10"
 val mainargsVersion = "0.7.8"
 val slf4jVersion = "2.0.20"
@@ -18,9 +18,7 @@ lazy val root = project
   .settings(
     name := "instastorysaver",
     libraryDependencies ++= Seq(
-      "io.circe" %% "circe-core" % circeVersion,
-      "io.circe" %% "circe-parser" % circeVersion,
-      "io.circe" %% "circe-generic" % circeVersion,
+      "com.lihaoyi" %% "upickle" % upickleVersion,
       "com.typesafe" % "config" % configVersion,
       "com.lihaoyi" %% "mainargs" % mainargsVersion,
       "org.slf4j" % "slf4j-simple" % slf4jVersion,
@@ -29,7 +27,7 @@ lazy val root = project
     // sbt 2's `test` behaves like testQuick; always run the full fixture suite.
     Test / test := (Test / testOnly).toTask(" *").value,
     scalacOptions ++= Seq(
-      "-source:3.3",
+      "-source:3.9",
       "-encoding",
       "utf-8",
       "-deprecation",
@@ -85,6 +83,8 @@ lazy val root = project
       case path if path.endsWith(".SF") || path.endsWith(".DSA") || path.endsWith(".RSA")      => MergeStrategy.discard
       case path if path.endsWith(".md") || path.endsWith(".markdown") || path.endsWith(".txt") => MergeStrategy.discard
       case path if path.toLowerCase.contains("license") || path.toLowerCase.contains("notice") => MergeStrategy.discard
+      // Scala 3 TASTy metadata is compile-time only; not needed at runtime or in native-image.
+      case path if path.endsWith(".tasty")                                                     => MergeStrategy.discard
       case other => MergeStrategy.defaultMergeStrategy(other)
     }
   )

@@ -7,7 +7,7 @@ A lightweight, high-performance background utility to download and archive activ
 ## 🚀 Features
 
 - **Scala 3.9 & Java 21+:** Modern, functional codebase using pure Java NIO streaming and the JDK HTTP client.
-- **Circe JSON:** Typed, pure Scala JSON parsing instead of Android's `org.json`.
+- **uPickle JSON:** Typed, dependency-light Scala JSON parsing instead of Android's `org.json`.
 - **GraalVM Native Image:** Pre-compiled standalone binaries for **macOS ARM64 (Apple Silicon)** & **Linux ARM64 (ARMv8-A)** with zero external dependencies (no JRE required).
 
 ---
@@ -90,7 +90,7 @@ sbt "clean; compile; test; assembly"
 
 Toolchain: Scala `3.9.0`, sbt `2.0.12`, Java `21+`.
 
-Migration details (OkHttp → Java HTTP, json-android → Circe, native-image settings):
+Migration details (OkHttp → Java HTTP, json-android → uPickle, native-image settings):
 [docs/MIGRATIONS.md](docs/MIGRATIONS.md)
 
 Response guide for AI agents when Instagram GraphQL changes:

@@ -2,7 +2,7 @@ package com.github.alikemalocalan.instastorysaver.service.web
 
 import com.github.alikemalocalan.instastorysaver.model.User
 import com.github.alikemalocalan.instastorysaver.service.web.dto.InstagramDtos.GraphQlErrorResponse
-import io.circe.Json
+import ujson.Value
 import munit.FunSuite
 
 import scala.io.Source
@@ -17,7 +17,7 @@ import scala.io.Source
 final class InstagramGraphQlSuite extends FunSuite {
   import InstagramJsonParser.*
 
-  private def fixture(name: String): Json = {
+  private def fixture(name: String): Value = {
     val stream = Option(getClass.getResourceAsStream(s"/graphql/$name"))
       .getOrElse(throw new IllegalArgumentException(s"Missing fixture: $name"))
     val raw = Source.fromInputStream(stream, "UTF-8")
@@ -99,14 +99,12 @@ final class InstagramGraphQlSuite extends FunSuite {
   test("GraphQL Not Found error maps to an empty reels response") {
     import InstagramDecoders.{given, *}
     val client = new InstagramWebClient(InstagramSession("123:abc", "csrf", "alice"))
-    val error = fixture("not_found_error.json")
-      .as[GraphQlErrorResponse]
-      .toOption
+    val error = decodeDto[GraphQlErrorResponse](fixture("not_found_error.json"), "not_found_error.json")
       .flatMap(_.errors)
       .getOrElse(Nil)
       .head
     val result = client.resolveGraphQlError(error, "not found")
-    assertEquals(result.noSpaces.contains("\"edges\":[]"), true)
+    assertEquals(ujson.write(result).contains("\"edges\":[]"), true)
   }
 
   test("form body encoding uses x-www-form-urlencoded rules") {

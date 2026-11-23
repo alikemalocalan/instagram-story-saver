@@ -148,16 +148,25 @@ final class InstagramWebClient(session: InstagramSession, gateway: HttpGateway =
             .flatMap(_.errors)
             .getOrElse(Nil)
 
-        if (graphErrors.nonEmpty) {
-          val first = graphErrors.head
-          val summary = first.summary.map(_.trim).filter(_.nonEmpty).getOrElse("no summary")
-          val message = first.message.map(_.trim).filter(_.nonEmpty).getOrElse("no message")
+        val first = graphErrors.headOption
+        val summary = first.flatMap(_.summary).map(_.trim).filter(_.nonEmpty).getOrElse("no summary")
+        val message = first.flatMap(_.message).map(_.trim).filter(_.nonEmpty).getOrElse("no message")
+
+        if (graphErrors.nonEmpty && !hasFeedData(json)) {
+          // No data at all: the endpoint rejected the whole request (doc id, variables, session).
           logger.warn(
             s"[GRAPHQL-ERROR] ${GraphQlContract.ProfilePosts.operation} for @${user.folderName}: " +
               s"$summary | $message | body=${responseBody.take(500)}"
           )
           UserFeedMedias(user, List.empty)
         } else {
+          if (graphErrors.nonEmpty) {
+            // Field-level errors (e.g. one missing profile picture) must not discard valid posts.
+            logger.warn(
+              s"[GRAPHQL-SHAPE] ${GraphQlContract.ProfilePosts.operation} for @${user.folderName}: " +
+                s"${graphErrors.size} field error(s), using available data | $summary | $message"
+            )
+          }
           val medias = parseFeedMedias(json)
           logger.info(s"Loaded ${medias.size} feed posts for @${user.folderName}.")
           UserFeedMedias(user, medias)
@@ -342,6 +351,10 @@ object InstagramWebClient {
     "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
 
   private var cachedWebTokens: Option[(String, String)] = None
+
+  /** True when a feed response contains a usable `data` object, even alongside field errors. */
+  private[web] def hasFeedData(json: Value): Boolean =
+    json.objOpt.flatMap(_.get("data")).exists(_.objOpt.exists(_.nonEmpty))
 
   private def jsonArrayOf(values: String*): Value =
     ujson.Arr(values.map(value => ujson.Str(value))*)

@@ -5,6 +5,9 @@ import com.github.alikemalocalan.instastorysaver.service.web.dto.InstagramDtos.G
 import ujson.Value
 import munit.FunSuite
 
+import java.io.InputStream
+import java.net.URI
+import java.net.http.HttpRequest
 import scala.io.Source
 
 /**
@@ -80,6 +83,29 @@ final class InstagramGraphQlSuite extends FunSuite {
         "__relay_internal__pv__PolarisReelsRecoDebugOverlayEnabledrelayprovider"
       )
     )
+  }
+
+  test("feed: field-level errors do not discard otherwise usable posts") {
+    val feed = fixture("feed.json")
+    feed.obj("errors") = ujson.Arr(ujson.Obj("message" -> "field_exception", "code" -> 1357005))
+    val tokensHtml = """["DTSGInitialData",[],{"token":"dt"},258],["LSD",[],{"token":"ls"},323]"""
+
+    val gateway = new HttpGateway {
+      override def requestBuilder(url: String): HttpRequest.Builder =
+        HttpRequest.newBuilder(URI.create(url))
+
+      override def execute(request: HttpRequest): (Int, String) =
+        if (request.uri().toString.contains("/api/graphql")) (200, ujson.write(feed))
+        else (200, tokensHtml)
+
+      override def openDownloadStream(url: String): InputStream =
+        throw new AssertionError("downloads are not part of this test")
+
+      override def close(): Unit = ()
+    }
+
+    val client = new InstagramWebClient(InstagramSession("123%3Asession", "csrf"), gateway)
+    assertEquals(client.fetchPosts(User("alice", "123")).medias.size, 3)
   }
 
   test("highlights: parses ids and titled medias") {

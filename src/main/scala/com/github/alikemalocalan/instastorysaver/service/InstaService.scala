@@ -1,14 +1,22 @@
 package com.github.alikemalocalan.instastorysaver.service
 
 import com.github.alikemalocalan.instastorysaver.model.*
+import com.github.alikemalocalan.instastorysaver.service.web.InstagramWebClient
 import com.instagram4j.web.Instagram4j
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.jdk.CollectionConverters.*
-import scala.util.{Failure, Success, Try, Using}
+import scala.util.{Failure, Success, Try}
 
+/**
+ * Orchestrates story/feed/highlight saving. All Instagram web protocol details (cookies, headers,
+ * GraphQL doc ids, response parsing) live in [[InstagramWebClient]].
+ */
 object InstaService {
   private val logger: Logger = LoggerFactory.getLogger(getClass)
+
+  private def webClient(using client: Instagram4j): InstagramWebClient =
+    new InstagramWebClient(client)
 
   def fromSession(sessionId: String, csrfToken: String, username: String = ""): Instagram4j =
     LoginService.fromSession(sessionId, csrfToken, username)
@@ -56,586 +64,13 @@ object InstaService {
         List.empty[User]
     }
 
-  def ensureFollowingCsvExists(destinationFolder: String)(using client: Instagram4j): Unit = {
+  def ensureFollowingCsvExists(destinationFolder: String)(using client: Instagram4j): Unit =
     CsvService.loadOrCreateFollowing(destinationFolder, () => fetchFollowingUsersFromApi())
-  }
-
-  private def isValidHttpUrl(url: String): Boolean =
-    url != null && (url.trim.startsWith("http://") || url.trim.startsWith("https://"))
-
-  private def extractBestVideoUrl(item: android.org.json.JSONObject): Option[String] =
-    Option(item.optJSONArray("video_versions"))
-      .filter(!_.isEmpty)
-      .flatMap { vArray =>
-        (0 until vArray.length())
-          .map(vArray.getJSONObject)
-          .sortBy(v => -(v.optInt("width", 0).toLong * v.optInt("height", 0).toLong * 1000L + v.optInt("bandwidth_bps", 0)))
-          .headOption
-          .flatMap(v => Option(v.optString("url", "")).filter(isValidHttpUrl))
-      }
-      .orElse {
-        Option(item.optJSONArray("video_resources"))
-          .filter(!_.isEmpty)
-          .flatMap { vrArray =>
-            (0 until vrArray.length())
-              .map(vrArray.getJSONObject)
-              .sortBy(vr => -(vr.optInt("config_width", 0).toLong * vr.optInt("config_height", 0).toLong))
-              .headOption
-              .flatMap(vr => Option(vr.optString("src", "")).orElse(Option(vr.optString("url", ""))).filter(isValidHttpUrl))
-          }
-      }
-
-  private def extractBestImageUrl(item: android.org.json.JSONObject): Option[String] =
-    Option(item.optJSONObject("image_versions2"))
-      .flatMap(v => Option(v.optJSONArray("candidates")))
-      .filter(!_.isEmpty)
-      .flatMap { cArray =>
-        (0 until cArray.length())
-          .map(cArray.getJSONObject)
-          .sortBy(c => -(c.optInt("width", 0).toLong * c.optInt("height", 0).toLong))
-          .headOption
-          .flatMap(c => Option(c.optString("url", "")).filter(isValidHttpUrl))
-      }
-      .orElse {
-        Option(item.optJSONArray("display_resources"))
-          .filter(!_.isEmpty)
-          .flatMap { drArray =>
-            (0 until drArray.length())
-              .map(drArray.getJSONObject)
-              .sortBy(dr => -(dr.optInt("config_width", 0).toLong * dr.optInt("config_height", 0).toLong))
-              .headOption
-              .flatMap(dr => Option(dr.optString("src", "")).orElse(Option(dr.optString("url", ""))).filter(isValidHttpUrl))
-          }
-      }
-      .orElse(Option(item.optString("display_url", "")).filter(isValidHttpUrl))
-
-  private def extractCarouselArray(item: android.org.json.JSONObject): Option[android.org.json.JSONArray] =
-    Option(item.optJSONArray("carousel_media"))
-      .orElse(
-        Option(item.optJSONObject("edge_sidecar_to_children")).flatMap(o =>
-          Option(o.optJSONArray("edges")).map { edges =>
-            val arr = new android.org.json.JSONArray()
-            for (k <- 0 until edges.length()) {
-              val node = edges.getJSONObject(k).optJSONObject("node")
-              if (node != null) arr.put(node)
-            }
-            arr
-          }
-        )
-      )
-
-  private def extractMediaItems(items: android.org.json.JSONArray): List[Media] =
-    (0 until items.length()).flatMap { j =>
-      val item = items.getJSONObject(j)
-      val carousel = extractCarouselArray(item)
-
-      if (carousel.exists(!_.isEmpty)) {
-        extractMediaItems(carousel.get)
-      } else {
-        val downloadUrl = extractBestVideoUrl(item).orElse(extractBestImageUrl(item)).filter(isValidHttpUrl)
-        val takenAt = item.optLong("taken_at", System.currentTimeMillis() / 1000L) * 1000L
-        downloadUrl.map(url => Media(url.trim, takenAt)).toList
-      }
-    }.toList
-
-  /**
-   * ===============================================================================================
-   * ⚠️ WORKAROUND: instagram4j Library Limitations / Manual GraphQL Query
-   * ===============================================================================================
-   * Why can't we use instagram4j's built-in methods (`Utils.postGraphQLWeb` / `Utils.getCall`) directly?
-   *
-   * 1. [Missing Header - x-ig-app-id]:
-   *    instagram4j (web:3.0) does not include the required `x-ig-app-id` (936619743392459) header
-   *    in GraphQL requests. The Instagram Web API rejects or treats calls without this header
-   *    as unauthenticated.
-   *
-   * 2. [Mobile API vs. Web Session Cookie Incompatibility]:
-   *    instagram4j's story endpoints target `https://i.instagram.com/api/v1/feed/...` (Mobile API).
-   *    When browser-issued web session cookies are sent to the mobile gateway, Instagram deletes
-   *    the cookie (`Set-Cookie: sessionid=""`) and returns empty reels.
-   *    Therefore, requests must go to the official web endpoint `https://www.instagram.com/graphql/query`.
-   *
-   * 3. [Deprecated / Retired Query IDs]:
-   *    instagram4j's `Constants.GraphQl.USER_STORY` (9551577494970907) is retired by Meta
-   *    and returns code 1675002 "Incorrect Query / The query provided was invalid".
-   *    The active, working query ID is `Constants.GraphQl.STORY` (9558504827580036).
-   *
-   * 4. [Required Web Security Headers]:
-   *    Instagram Web GraphQL requires `x-csrftoken`, `origin: https://www.instagram.com`,
-   *    and `referer: https://www.instagram.com/` for CSRF protection and proper resolution.
-   *
-   * ℹ️ If a future version of instagram4j adds these headers and updates doc_id constants,
-   * this manual method can be replaced by `Utils.postGraphQLWeb()`.
-   * ===============================================================================================
-   */
-
-  def queryGraphQLWeb(
-      docId: String,
-      variables: android.org.json.JSONObject
-  )(using client: Instagram4j): android.org.json.JSONObject = {
-    val selfPk = client.session.split("[:%]").headOption.getOrElse("")
-    val cookie =
-      s"sessionid=${client.session}; ds_user_id=$selfPk${if (client.crsf != null && client.crsf.nonEmpty) s"; csrftoken=${client.crsf}" else ""}"
-
-    val formBody = new okhttp3.FormBody.Builder()
-      .add("doc_id", docId)
-      .add("variables", variables.toString)
-      .build()
-
-    val req = new okhttp3.Request.Builder()
-      .url("https://www.instagram.com/graphql/query")
-      .header("authority", "www.instagram.com")
-      .header("accept", "*/*")
-      .header("accept-language", HttpConstants.AcceptLanguage)
-      .header("origin", "https://www.instagram.com")
-      .header("referer", "https://www.instagram.com/")
-      .header("sec-ch-ua", HttpConstants.SecChUa)
-      .header("sec-ch-ua-mobile", HttpConstants.SecChUaMobile)
-      .header("sec-ch-ua-platform", HttpConstants.SecChUaPlatform)
-      .header("sec-fetch-dest", "empty")
-      .header("sec-fetch-mode", "cors")
-      .header("sec-fetch-site", "same-origin")
-      .header("user-agent", HttpConstants.UserAgent)
-      .header("x-asbd-id", HttpConstants.AsbdId)
-      .header("x-ig-app-id", HttpConstants.AppId)
-      .header("x-ig-www-claim", "0")
-      .header("x-requested-with", "XMLHttpRequest")
-      .header("x-csrftoken", if (client.crsf != null) client.crsf else "")
-      .header("cookie", cookie)
-      .post(formBody)
-      .build()
-
-    Using.resource(com.instagram4j.web.Utils.client.newCall(req).execute()) { response =>
-      val body = Option(response.body()).map(_.string()).getOrElse("")
-      if (!response.isSuccessful) {
-        throw new java.io.IOException(s"GraphQL request failed with HTTP ${response.code()}: $body")
-      }
-      val json = new android.org.json.JSONObject(body)
-      if (json.has("errors")) {
-        val errors = json.getJSONArray("errors")
-        val firstError = if (errors.length() > 0) errors.getJSONObject(0) else new android.org.json.JSONObject()
-        val errorSummary = firstError.optString("summary", "")
-        val errorMsg = firstError.optString("message", "Unknown error")
-
-        // Instagram returns "Not Found" when a queried user reel has no active stories.
-        if (errorSummary.equalsIgnoreCase("Not Found")) {
-          new android.org.json.JSONObject("{\"data\":{\"xdt_api__v1__feed__reels_media__connection\":{\"edges\":[]}}}")
-        } else {
-          throw new java.io.IOException(s"Instagram GraphQL error: $errorMsg (response: $body)")
-        }
-      } else {
-        json
-      }
-    }
-  }
-
-  private def parseStoriesFromGraphQLResponse(
-      response: android.org.json.JSONObject,
-      userMap: Map[String, String]
-  ): List[UserStories] = {
-    val data = Option(response.optJSONObject("data")).getOrElse(response)
-
-    // Check if Instagram treated the request as unauthenticated
-    Option(data.optJSONObject("xdt_viewer")).foreach { viewer =>
-      if (viewer.isNull("user") || viewer.optJSONObject("user") == null) {
-        val msg =
-          """
-            |================================================================================
-            |❌ INSTAGRAM SESSION IS EXPIRED OR INVALID!
-            |
-            |Instagram GraphQL responded as unauthenticated viewer (xdt_viewer.user is null).
-            |Please refresh your --session-id and --csrf-token values from your browser.
-            |================================================================================
-            |""".stripMargin
-        logger.error(msg)
-        throw new IllegalStateException("Instagram session is expired or invalid. Please refresh cookies.")
-      }
-    }
-
-    val edges = Option(data.optJSONObject("xdt_api__v1__feed__reels_media__connection"))
-      .flatMap(conn => Option(conn.optJSONArray("edges")))
-      .getOrElse(new android.org.json.JSONArray())
-
-    (0 until edges.length()).flatMap { i =>
-      val node = edges.getJSONObject(i).getJSONObject("node")
-      val nodeUser = Option(node.optJSONObject("user"))
-      val userId = nodeUser.map(_.optString("pk", "")).filter(_.nonEmpty).getOrElse(node.optString("id", ""))
-      val username = nodeUser
-        .map(_.optString("username", ""))
-        .filter(_.nonEmpty)
-        .getOrElse(userMap.getOrElse(userId, userId))
-      val user = User(username, userId)
-
-      val items = Option(node.optJSONArray("items")).getOrElse(new android.org.json.JSONArray())
-      val medias = extractMediaItems(items)
-      if (medias.nonEmpty) Some(UserStories(user, medias)) else None
-    }.toList
-  }
-
-  def getUserStories(user: User)(using client: Instagram4j): UserStories =
-    Try {
-      val vars = new android.org.json.JSONObject()
-      vars.put("initial_reel_id", user.userId)
-      val arr = new android.org.json.JSONArray()
-      arr.put(user.userId)
-      vars.put("reel_ids", arr)
-      vars.put("first", 10)
-
-      val res = queryGraphQLWeb(com.instagram4j.web.Constants.GraphQl.STORY, vars)
-      val stories = parseStoriesFromGraphQLResponse(res, Map(user.userId -> user.folderName))
-      stories.headOption.getOrElse(UserStories(user, List.empty))
-    } match {
-      case Success(userStories) => userStories
-      case Failure(ex) =>
-        logger.warn(s"Could not get stories for user @${user.folderName}: ${ex.getMessage}")
-        UserStories(user, List.empty)
-    }
-
-  private def getUserHighlights(user: User)(using client: Instagram4j): UserHighLightStoryMedias =
-    Try {
-      val variables = new android.org.json.JSONObject()
-      variables.put("user_id", user.userId)
-
-      val response = queryGraphQLWeb(com.instagram4j.web.Constants.GraphQl.HIGHLIGHTS, variables)
-      val edges = Option(response.optJSONObject("data"))
-        .orElse(Some(response))
-        .flatMap(d => Option(d.optJSONObject("highlights")))
-        .flatMap(h => Option(h.optJSONArray("edges")))
-
-      val highlights = edges
-        .filter(!_.isEmpty)
-        .map { edgeArray =>
-          val ids = (0 until edgeArray.length()).map { i =>
-            edgeArray.getJSONObject(i).getJSONObject("node").getString("id")
-          }.toList
-
-          if (ids.isEmpty) {
-            List.empty[HighLightStoryMedia]
-          } else {
-            val vars = new android.org.json.JSONObject()
-            vars.put("initial_reel_id", ids.head)
-            val reelIdsArray = new android.org.json.JSONArray()
-            ids.foreach(reelIdsArray.put)
-            vars.put("reel_ids", reelIdsArray)
-            vars.put("first", math.max(ids.size, 10))
-
-            val res = queryGraphQLWeb(com.instagram4j.web.Constants.GraphQl.STORY, vars)
-            val reelEdges = Option(res.optJSONObject("data"))
-              .orElse(Some(res))
-              .flatMap(d => Option(d.optJSONObject("xdt_api__v1__feed__reels_media__connection")))
-              .flatMap(c => Option(c.optJSONArray("edges")))
-              .getOrElse(new android.org.json.JSONArray())
-
-            (0 until reelEdges.length()).flatMap { j =>
-              val node = reelEdges.getJSONObject(j).getJSONObject("node")
-              val title = Option(node.optString("title")).filter(_.nonEmpty).getOrElse("highlight")
-              val items = Option(node.optJSONArray("items")).getOrElse(new android.org.json.JSONArray())
-              extractMediaItems(items).map { m =>
-                HighLightStoryMedia(m.url, m.takenOn, title)
-              }
-            }.toList
-          }
-        }
-        .getOrElse(List.empty)
-
-      UserHighLightStoryMedias(user, highlights)
-    } match {
-      case Success(userHighlights) => userHighlights
-      case Failure(ex) =>
-        logger.warn(s"Could not get highlights for user @${user.folderName}: ${ex.getMessage}")
-        UserHighLightStoryMedias(user, List.empty)
-    }
-
-  private var cachedWebTokens: Option[(String, String)] = None
-
-  private def getWebTokens(username: String)(using client: Instagram4j): (String, String) = synchronized {
-    cachedWebTokens match {
-      case Some(tokens) if tokens._1.nonEmpty && tokens._2.nonEmpty => tokens
-      case _ =>
-        val selfPk = client.session.split("[:%]").headOption.getOrElse("")
-        val cookie =
-          s"sessionid=${client.session}; ds_user_id=$selfPk${if (client.crsf != null && client.crsf.nonEmpty) s"; csrftoken=${client.crsf}" else ""}"
-
-        val pageReq = new okhttp3.Request.Builder()
-          .url(s"https://www.instagram.com/${if (username.nonEmpty) s"$username/" else ""}")
-          .header("authority", "www.instagram.com")
-          .header("accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
-          .header("accept-language", HttpConstants.AcceptLanguage)
-          .header("sec-ch-ua", HttpConstants.SecChUa)
-          .header("sec-ch-ua-mobile", HttpConstants.SecChUaMobile)
-          .header("sec-ch-ua-platform", HttpConstants.SecChUaPlatform)
-          .header("sec-fetch-dest", "document")
-          .header("sec-fetch-mode", "navigate")
-          .header("sec-fetch-site", "same-origin")
-          .header("user-agent", HttpConstants.UserAgent)
-          .header("cookie", cookie)
-          .get()
-          .build()
-
-        val tokens = Using.resource(com.instagram4j.web.Utils.client.newCall(pageReq).execute()) { resp =>
-          val html = Option(resp.body()).map(_.string()).getOrElse("")
-          val dtsgPattern = "\"DTSGInitialData\"[^\"]*\"token\":\"([^\"]+)\"".r
-          val dtsgAltPattern = "\"dtsg\":\\{\"token\":\"([^\"]+)\"".r
-          val lsdPattern = "\"LSD\"[^\"]*\"token\":\"([^\"]+)\"".r
-
-          val dtsg = dtsgPattern
-            .findFirstMatchIn(html)
-            .orElse(dtsgAltPattern.findFirstMatchIn(html))
-            .map(_.group(1))
-            .getOrElse("")
-
-          val lsd = lsdPattern.findFirstMatchIn(html).map(_.group(1)).getOrElse("")
-          (dtsg, lsd)
-        }
-
-        if (tokens._1.nonEmpty || tokens._2.nonEmpty) {
-          cachedWebTokens = Some(tokens)
-        }
-        tokens
-    }
-  }
-
-  private def getUserPosts(user: User, maxPages: Int = 1)(using client: Instagram4j): UserFeedMedias =
-    Try {
-      val selfPk = client.session.split("[:%]").headOption.getOrElse("")
-      val cookie =
-        s"sessionid=${client.session}; ds_user_id=$selfPk${if (client.crsf != null && client.crsf.nonEmpty) s"; csrftoken=${client.crsf}" else ""}"
-
-      val (fbDtsg, lsd) = getWebTokens(user.folderName)
-
-      val dataObj = new android.org.json.JSONObject()
-      dataObj.put("count", 12)
-      dataObj.put("include_relationship_info", true)
-      dataObj.put("latest_besties_reel_media", true)
-      dataObj.put("latest_reel_media", true)
-
-      val variables = new android.org.json.JSONObject()
-      variables.put("after", android.org.json.JSONObject.NULL)
-      variables.put("before", android.org.json.JSONObject.NULL)
-      variables.put("data", dataObj)
-      variables.put("first", 12)
-      variables.put("last", android.org.json.JSONObject.NULL)
-      variables.put("username", user.folderName)
-      variables.put("__relay_internal__pv__PolarisMultiCaptionCarouselEnabledrelayprovider", false)
-      variables.put("__relay_internal__pv__PolarisShortDramaEnabledrelayprovider", false)
-      variables.put("__relay_internal__pv__PolarisSEOIsCrawlerrelayprovider", false)
-      variables.put("__relay_internal__pv__PolarisProductTagIndicatorEnabledrelayprovider", false)
-      variables.put("__relay_internal__pv__PolarisThreadsStyleCommentsEnabledrelayprovider", false)
-      variables.put("__relay_internal__pv__PolarisReelsRecoDebugOverlayEnabledrelayprovider", false)
-
-      val formBody = new okhttp3.FormBody.Builder()
-        .add("av", selfPk)
-        .add("fb_dtsg", fbDtsg)
-        .add("lsd", lsd)
-        .add("fb_api_caller_class", "RelayModern")
-        .add("fb_api_req_friendly_name", "PolarisProfilePostsQuery")
-        .add("variables", variables.toString)
-        .add("doc_id", "30543471925243353")
-        .build()
-
-      val req = new okhttp3.Request.Builder()
-        .url("https://www.instagram.com/api/graphql")
-        .header("authority", "www.instagram.com")
-        .header("accept", "*/*")
-        .header("accept-language", HttpConstants.AcceptLanguage)
-        .header("content-type", "application/x-www-form-urlencoded")
-        .header("origin", "https://www.instagram.com")
-        .header("referer", s"https://www.instagram.com/${user.folderName}/")
-        .header("sec-ch-ua", HttpConstants.SecChUa)
-        .header("sec-ch-ua-mobile", HttpConstants.SecChUaMobile)
-        .header("sec-ch-ua-platform", HttpConstants.SecChUaPlatform)
-        .header("sec-fetch-dest", "empty")
-        .header("sec-fetch-mode", "cors")
-        .header("sec-fetch-site", "same-origin")
-        .header("user-agent", HttpConstants.UserAgent)
-        .header("x-asbd-id", HttpConstants.AsbdId)
-        .header("x-csrftoken", if (client.crsf != null) client.crsf else "")
-        .header("x-fb-friendly-name", "PolarisProfilePostsQuery")
-        .header("x-fb-lsd", lsd)
-        .header("x-ig-app-id", HttpConstants.AppId)
-        .header("cookie", cookie)
-        .post(formBody)
-        .build()
-
-      Using.resource(com.instagram4j.web.Utils.client.newCall(req).execute()) { resp =>
-        if (!resp.isSuccessful) {
-          logger.warn(s"Could not get posts for user @${user.folderName}: HTTP ${resp.code()}")
-          UserFeedMedias(user, List.empty)
-        } else {
-          val body = Option(resp.body()).map(_.string()).getOrElse("")
-          val json = new android.org.json.JSONObject(body)
-          val data = Option(json.optJSONObject("data"))
-          val conn = data.flatMap(d => Option(d.optJSONObject("xdt_api__v1__feed__user_timeline_graphql_connection")))
-          val edges = conn.flatMap(c => Option(c.optJSONArray("edges"))).getOrElse(new android.org.json.JSONArray())
-
-          val items = new android.org.json.JSONArray()
-          for (i <- 0 until edges.length()) {
-            val node = edges.getJSONObject(i).optJSONObject("node")
-            if (node != null) items.put(node)
-          }
-
-          val medias = extractMediaItems(items)
-          logger.info(s"Loaded ${medias.size} feed posts for @${user.folderName}.")
-          UserFeedMedias(user, medias)
-        }
-      }
-    } match {
-      case Success(userFeeds) => userFeeds
-      case Failure(ex) =>
-        val msg = Option(ex.getMessage).map(_.take(120)).getOrElse("Unknown error")
-        logger.warn(s"Could not get posts for user @${user.folderName}: $msg")
-        UserFeedMedias(user, List.empty)
-    }
-
-  def fetchStoriesForUser(user: User)(using client: Instagram4j): List[Media] = Try {
-    val selfPk = client.session.split("[:%]").headOption.getOrElse("")
-    val cookie =
-      s"sessionid=${client.session}; ds_user_id=$selfPk${if (client.crsf != null && client.crsf.nonEmpty) s"; csrftoken=${client.crsf}" else ""}"
-
-    val req = new okhttp3.Request.Builder()
-      .url(s"https://www.instagram.com/stories/${user.folderName}/")
-      .header("authority", "www.instagram.com")
-      .header("accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
-      .header("accept-language", HttpConstants.AcceptLanguage)
-      .header("sec-ch-ua", HttpConstants.SecChUa)
-      .header("sec-ch-ua-mobile", HttpConstants.SecChUaMobile)
-      .header("sec-ch-ua-platform", HttpConstants.SecChUaPlatform)
-      .header("sec-fetch-dest", "document")
-      .header("sec-fetch-mode", "navigate")
-      .header("sec-fetch-site", "same-origin")
-      .header("user-agent", HttpConstants.UserAgent)
-      .header("cookie", cookie)
-      .get()
-      .build()
-
-    Using.resource(com.instagram4j.web.Utils.client.newCall(req).execute()) { response =>
-      if (!response.isSuccessful) List.empty[Media]
-      else {
-        val html = Option(response.body()).map(_.string()).getOrElse("")
-        val marker = "{\"xdt_api__v1__feed__reels_media\":"
-        val sIdx = html.indexOf(marker)
-        if (sIdx < 0) List.empty[Media]
-        else {
-          val eIdx = html.indexOf("</script>", sIdx)
-          val jsonStr = html.substring(sIdx, if (eIdx > 0) eIdx else html.length)
-          val trimmed = if (jsonStr.endsWith(";")) jsonStr.dropRight(1) else jsonStr
-          val obj = new android.org.json.JSONObject(trimmed)
-          val reelsMedia = obj.getJSONObject("xdt_api__v1__feed__reels_media").getJSONArray("reels_media")
-          if (reelsMedia.length() == 0) List.empty[Media]
-          else {
-            val items = reelsMedia.getJSONObject(0).optJSONArray("items")
-            if (items == null) List.empty[Media]
-            else extractMediaItems(items)
-          }
-        }
-      }
-    }
-  }.getOrElse(List.empty)
-
-  def fetchMediaInfo(mediaId: String)(using client: Instagram4j): Option[Media] = Try {
-    val selfPk = client.session.split("[:%]").headOption.getOrElse("")
-    val cookie =
-      s"sessionid=${client.session}; ds_user_id=$selfPk${if (client.crsf != null && client.crsf.nonEmpty) s"; csrftoken=${client.crsf}" else ""}"
-
-    val req = new okhttp3.Request.Builder()
-      .url(s"https://www.instagram.com/api/v1/media/$mediaId/info/")
-      .header("authority", "www.instagram.com")
-      .header("accept", "*/*")
-      .header("accept-language", HttpConstants.AcceptLanguage)
-      .header("origin", "https://www.instagram.com")
-      .header("referer", "https://www.instagram.com/")
-      .header("sec-ch-ua", HttpConstants.SecChUa)
-      .header("sec-ch-ua-mobile", HttpConstants.SecChUaMobile)
-      .header("sec-ch-ua-platform", HttpConstants.SecChUaPlatform)
-      .header("sec-fetch-dest", "empty")
-      .header("sec-fetch-mode", "cors")
-      .header("sec-fetch-site", "same-origin")
-      .header("user-agent", HttpConstants.UserAgent)
-      .header("x-asbd-id", HttpConstants.AsbdId)
-      .header("x-ig-app-id", HttpConstants.AppId)
-      .header("x-ig-www-claim", "0")
-      .header("x-requested-with", "XMLHttpRequest")
-      .header("x-csrftoken", if (client.crsf != null) client.crsf else "")
-      .header("cookie", cookie)
-      .get()
-      .build()
-
-    Using.resource(com.instagram4j.web.Utils.client.newCall(req).execute()) { response =>
-      if (response.isSuccessful) {
-        val body = Option(response.body()).map(_.string()).getOrElse("")
-        val json = new android.org.json.JSONObject(body)
-        val items = json.optJSONArray("items")
-        if (items != null && items.length() > 0) {
-          extractMediaItems(items).headOption
-        } else None
-      } else None
-    }
-  }.toOption.flatten
-
-  private def fetchReelsTray()(using client: Instagram4j): List[(User, List[String])] = Try {
-    val selfPk = client.session.split("[:%]").headOption.getOrElse("")
-    val cookie =
-      s"sessionid=${client.session}; ds_user_id=$selfPk${if (client.crsf != null && client.crsf.nonEmpty) s"; csrftoken=${client.crsf}" else ""}"
-
-    val req = new okhttp3.Request.Builder()
-      .url("https://www.instagram.com/api/v1/feed/reels_tray/")
-      .header("authority", "www.instagram.com")
-      .header("accept", "*/*")
-      .header("accept-language", HttpConstants.AcceptLanguage)
-      .header("origin", "https://www.instagram.com")
-      .header("referer", "https://www.instagram.com/")
-      .header("sec-ch-ua", HttpConstants.SecChUa)
-      .header("sec-ch-ua-mobile", HttpConstants.SecChUaMobile)
-      .header("sec-ch-ua-platform", HttpConstants.SecChUaPlatform)
-      .header("sec-fetch-dest", "empty")
-      .header("sec-fetch-mode", "cors")
-      .header("sec-fetch-site", "same-origin")
-      .header("user-agent", HttpConstants.UserAgent)
-      .header("x-asbd-id", HttpConstants.AsbdId)
-      .header("x-ig-app-id", HttpConstants.AppId)
-      .header("x-ig-www-claim", "0")
-      .header("x-requested-with", "XMLHttpRequest")
-      .header("x-csrftoken", if (client.crsf != null) client.crsf else "")
-      .header("cookie", cookie)
-      .get()
-      .build()
-
-    Using.resource(com.instagram4j.web.Utils.client.newCall(req).execute()) { response =>
-      if (!response.isSuccessful) {
-        logger.warn(s"Failed to fetch reels tray: HTTP ${response.code()}")
-        List.empty
-      } else {
-        val body = Option(response.body()).map(_.string()).getOrElse("")
-        val json = new android.org.json.JSONObject(body)
-        val tray = json.optJSONArray("tray")
-        if (tray == null) List.empty
-        else {
-          (0 until tray.length()).flatMap { i =>
-            val reel = tray.getJSONObject(i)
-            val userObj = reel.optJSONObject("user")
-            if (userObj == null) None
-            else {
-              val username = userObj.optString("username", "")
-              val userId = String.valueOf(reel.optLong("id", userObj.optLong("pk", 0)))
-              val mediaIdsArr = reel.optJSONArray("media_ids")
-              val mediaIds = if (mediaIdsArr != null) {
-                (0 until mediaIdsArr.length()).map(k => String.valueOf(mediaIdsArr.get(k))).toList
-              } else List.empty[String]
-
-              if (username.nonEmpty && mediaIds.nonEmpty) {
-                Some((User(username, userId), mediaIds))
-              } else None
-            }
-          }.toList
-        }
-      }
-    }
-  }.getOrElse(List.empty)
 
   private def getFeedStories(destinationFolder: String = "")(using client: Instagram4j): List[UserStories] = {
     logger.info("Fetching active stories from reels tray...")
 
-    val trayReels = fetchReelsTray()
+    val trayReels = webClient.fetchReelsTray()
     if (trayReels.isEmpty) {
       logger.info("No active reels returned in tray.")
       return List.empty[UserStories]
@@ -664,13 +99,13 @@ object InstaService {
     val userStoriesList = targetReels.flatMap { case (user, mediaIds) =>
       logger.info(s"Fetching active stories for @${user.folderName} (${mediaIds.size} in tray)...")
       Thread.sleep(250)
-      val userMedias = fetchStoriesForUser(user)
+      val userMedias = webClient.fetchStoriesFromPage(user)
       val finalMedias = if (userMedias.nonEmpty) {
         userMedias
       } else {
         mediaIds.flatMap { mediaId =>
           Thread.sleep(100)
-          fetchMediaInfo(mediaId)
+          webClient.fetchMediaInfo(mediaId)
         }
       }
       if (finalMedias.nonEmpty) {
@@ -683,7 +118,6 @@ object InstaService {
     logger.info(s"Loaded $totalMediaCount active stories across ${userStoriesList.size} users.")
     userStoriesList
   }
-
 
   def saveStories(
       destinationFolder: String,
@@ -738,7 +172,7 @@ object InstaService {
       }
       val user = record.toUser
       logger.info(s"[$processedCount/${dueRecords.size}] Fetching feeds for @${user.folderName}...")
-      val userFeeds = getUserPosts(user)
+      val userFeeds = webClient.fetchPosts(user)
 
       if (userFeeds.medias.nonEmpty) {
         logger.info(s"Found ${userFeeds.medias.size} feed media for @${user.folderName}. Saving in highest quality...")
@@ -791,7 +225,7 @@ object InstaService {
       }
       val user = record.toUser
       logger.info(s"[$processedCount/${dueRecords.size}] Checking highlights for @${user.folderName}...")
-      val userHighlights = getUserHighlights(user)
+      val userHighlights = webClient.fetchHighlights(user)
 
       if (userHighlights.medias.nonEmpty) {
         logger.info(
@@ -809,7 +243,8 @@ object InstaService {
     }
 
     logger.info(
-      s"Finished highlights update run. Checked ${dueRecords.size} users, saved $savedHighlightsCount highlight media files."
+      s"Finished highlights update run. Checked ${dueRecords.size} users, " +
+        s"saved $savedHighlightsCount highlight media files."
     )
   }
 }

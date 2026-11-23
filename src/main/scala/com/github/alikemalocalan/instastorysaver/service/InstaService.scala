@@ -369,9 +369,55 @@ object InstaService {
     } match {
       case Success(userFeeds) => userFeeds
       case Failure(ex) =>
-        logger.warn(s"Could not get posts for user @${user.folderName}: ${ex.getMessage}")
+        val msg = Option(ex.getMessage).map(_.take(120)).getOrElse("Unknown error")
+        logger.warn(s"Could not get posts for user @${user.folderName}: $msg")
         UserFeedMedias(user, List.empty)
     }
+
+  def fetchStoriesForUser(user: User)(using client: Instagram4j): List[Media] = Try {
+    val selfPk = client.session.split("[:%]").headOption.getOrElse("")
+    val cookie =
+      s"sessionid=${client.session}; ds_user_id=$selfPk${if (client.crsf != null && client.crsf.nonEmpty) s"; csrftoken=${client.crsf}" else ""}"
+
+    val req = new okhttp3.Request.Builder()
+      .url(s"https://www.instagram.com/stories/${user.folderName}/")
+      .header("authority", "www.instagram.com")
+      .header("accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+      .header("accept-language", HttpConstants.AcceptLanguage)
+      .header("sec-ch-ua", HttpConstants.SecChUa)
+      .header("sec-ch-ua-mobile", HttpConstants.SecChUaMobile)
+      .header("sec-ch-ua-platform", HttpConstants.SecChUaPlatform)
+      .header("sec-fetch-dest", "document")
+      .header("sec-fetch-mode", "navigate")
+      .header("sec-fetch-site", "same-origin")
+      .header("user-agent", HttpConstants.UserAgent)
+      .header("cookie", cookie)
+      .get()
+      .build()
+
+    Using.resource(com.instagram4j.web.Utils.client.newCall(req).execute()) { response =>
+      if (!response.isSuccessful) List.empty[Media]
+      else {
+        val html = Option(response.body()).map(_.string()).getOrElse("")
+        val marker = "{\"xdt_api__v1__feed__reels_media\":"
+        val sIdx = html.indexOf(marker)
+        if (sIdx < 0) List.empty[Media]
+        else {
+          val eIdx = html.indexOf("</script>", sIdx)
+          val jsonStr = html.substring(sIdx, if (eIdx > 0) eIdx else html.length)
+          val trimmed = if (jsonStr.endsWith(";")) jsonStr.dropRight(1) else jsonStr
+          val obj = new android.org.json.JSONObject(trimmed)
+          val reelsMedia = obj.getJSONObject("xdt_api__v1__feed__reels_media").getJSONArray("reels_media")
+          if (reelsMedia.length() == 0) List.empty[Media]
+          else {
+            val items = reelsMedia.getJSONObject(0).optJSONArray("items")
+            if (items == null) List.empty[Media]
+            else extractMediaItems(items)
+          }
+        }
+      }
+    }
+  }.getOrElse(List.empty)
 
   def fetchMediaInfo(mediaId: String)(using client: Instagram4j): Option[Media] = Try {
     val selfPk = client.session.split("[:%]").headOption.getOrElse("")
@@ -503,12 +549,21 @@ object InstaService {
     logger.info(s"Matching ${targetReels.size} followed users with active stories to download...")
 
     val userStoriesList = targetReels.flatMap { case (user, mediaIds) =>
-      logger.info(s"Fetching ${mediaIds.size} stories for @${user.folderName}...")
-      val medias = mediaIds.flatMap { mediaId =>
-        Thread.sleep(150)
-        fetchMediaInfo(mediaId)
+      logger.info(s"Fetching active stories for @${user.folderName} (${mediaIds.size} in tray)...")
+      Thread.sleep(250)
+      val userMedias = fetchStoriesForUser(user)
+      val finalMedias = if (userMedias.nonEmpty) {
+        userMedias
+      } else {
+        mediaIds.flatMap { mediaId =>
+          Thread.sleep(100)
+          fetchMediaInfo(mediaId)
+        }
       }
-      if (medias.nonEmpty) Some(UserStories(user, medias)) else None
+      if (finalMedias.nonEmpty) {
+        logger.info(s"Loaded ${finalMedias.size} stories for @${user.folderName}.")
+        Some(UserStories(user, finalMedias))
+      } else None
     }
 
     val totalMediaCount = userStoriesList.map(_.medias.size).sum

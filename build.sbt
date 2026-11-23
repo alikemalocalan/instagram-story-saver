@@ -50,12 +50,11 @@ lazy val root = project
         "-march=armv8-a",
         "-R:MinHeapSize=16m",
         "-R:MaxHeapSize=64m",
-        "--strict-image-heap",
         "-H:-IncludeStackTraces",
         "--enable-https",
         "--enable-http",
         "--install-exit-handlers",
-        "--initialize-at-build-time=org.slf4j,com.typesafe.config,io.circe"
+        "--initialize-at-build-time=org.slf4j,com.typesafe.config"
       )
       if (isMac) {
         baseOptions ++ Seq(

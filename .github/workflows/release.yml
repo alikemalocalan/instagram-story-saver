@@ -84,13 +84,12 @@ jobs:
             -march=armv8-a \
             -R:MinHeapSize=16m \
             -R:MaxHeapSize=64m \
-            --strict-image-heap \
             -H:-IncludeStackTraces \
             -H:NativeLinkerOption=-Wl,-dead_strip \
             --enable-https \
             --enable-http \
             --install-exit-handlers \
-            --initialize-at-build-time=org.slf4j,com.typesafe.config,io.circe \
+            --initialize-at-build-time=org.slf4j,com.typesafe.config \
             -jar instastorysaver.jar \
             -o instastorysaver
 

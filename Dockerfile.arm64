@@ -17,7 +17,6 @@ RUN native-image \
     -march=armv8-a \
     -R:MinHeapSize=16m \
     -R:MaxHeapSize=64m \
-    --strict-image-heap \
     -H:+StripDebugInfo \
     -H:NativeLinkerOption=-Wl,--gc-sections \
     -H:NativeLinkerOption=-Wl,--strip-all \
@@ -25,7 +24,7 @@ RUN native-image \
     --enable-https \
     --enable-http \
     --install-exit-handlers \
-    --initialize-at-build-time=org.slf4j,com.typesafe.config,io.circe \
+    --initialize-at-build-time=org.slf4j,com.typesafe.config \
     -jar app.jar \
     -o instastorysaver-bin
 

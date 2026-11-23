@@ -123,15 +123,17 @@ Updated files:
 - `.github/workflows/release.yml`
 - `Dockerfile.arm64`
 
-For GraalVM native-image, `android.org.json,okio` was removed and `io.circe` added:
+For GraalVM native-image, `android.org.json,okio` was removed from build-time initialization:
 
 ```
 --enable-http
 --enable-https
---initialize-at-build-time=org.slf4j,com.typesafe.config,io.circe
+--initialize-at-build-time=org.slf4j,com.typesafe.config
 ```
 
 `--enable-http` / `--enable-https` are required by `java.net.http.HttpClient` and were kept.
+
+Circe is **not** initialized at build time. Adding `io.circe` there made GraalVM pull Scala/cats singletons (`Vector0$`, `BigInt$`, `cats.Eval$`, ...) into the image heap unintentionally. `--strict-image-heap` was also removed: with Circe it cascaded into `io.circe.Json$JNumber` and `scala.collection.immutable.Vector0$` errors. The ARM64 Linux bundle now builds successfully with these settings.
 
 ---
 

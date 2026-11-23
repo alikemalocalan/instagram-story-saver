@@ -346,26 +346,139 @@ object InstaService {
         UserHighLightStoryMedias(user, List.empty)
     }
 
+  private var cachedWebTokens: Option[(String, String)] = None
+
+  private def getWebTokens(username: String)(using client: Instagram4j): (String, String) = synchronized {
+    cachedWebTokens match {
+      case Some(tokens) if tokens._1.nonEmpty && tokens._2.nonEmpty => tokens
+      case _ =>
+        val selfPk = client.session.split("[:%]").headOption.getOrElse("")
+        val cookie =
+          s"sessionid=${client.session}; ds_user_id=$selfPk${if (client.crsf != null && client.crsf.nonEmpty) s"; csrftoken=${client.crsf}" else ""}"
+
+        val pageReq = new okhttp3.Request.Builder()
+          .url(s"https://www.instagram.com/${if (username.nonEmpty) s"$username/" else ""}")
+          .header("authority", "www.instagram.com")
+          .header("accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+          .header("accept-language", HttpConstants.AcceptLanguage)
+          .header("sec-ch-ua", HttpConstants.SecChUa)
+          .header("sec-ch-ua-mobile", HttpConstants.SecChUaMobile)
+          .header("sec-ch-ua-platform", HttpConstants.SecChUaPlatform)
+          .header("sec-fetch-dest", "document")
+          .header("sec-fetch-mode", "navigate")
+          .header("sec-fetch-site", "same-origin")
+          .header("user-agent", HttpConstants.UserAgent)
+          .header("cookie", cookie)
+          .get()
+          .build()
+
+        val tokens = Using.resource(com.instagram4j.web.Utils.client.newCall(pageReq).execute()) { resp =>
+          val html = Option(resp.body()).map(_.string()).getOrElse("")
+          val dtsgPattern = "\"DTSGInitialData\"[^\"]*\"token\":\"([^\"]+)\"".r
+          val dtsgAltPattern = "\"dtsg\":\\{\"token\":\"([^\"]+)\"".r
+          val lsdPattern = "\"LSD\"[^\"]*\"token\":\"([^\"]+)\"".r
+
+          val dtsg = dtsgPattern
+            .findFirstMatchIn(html)
+            .orElse(dtsgAltPattern.findFirstMatchIn(html))
+            .map(_.group(1))
+            .getOrElse("")
+
+          val lsd = lsdPattern.findFirstMatchIn(html).map(_.group(1)).getOrElse("")
+          (dtsg, lsd)
+        }
+
+        if (tokens._1.nonEmpty || tokens._2.nonEmpty) {
+          cachedWebTokens = Some(tokens)
+        }
+        tokens
+    }
+  }
+
   private def getUserPosts(user: User, maxPages: Int = 1)(using client: Instagram4j): UserFeedMedias =
     Try {
-      val paginator =
-        new com.instagram4j.web.paginators.PostPaginator(client.session, client.crsf, user.folderName, null)
-      val medias = paginator.asScala
-        .take(maxPages)
-        .flatMap { postList =>
-          postList.asScala.flatMap { post =>
-            Option(post.download_url)
-              .map(
-                _.filter(isValidHttpUrl)
-                  .map(url => Media(url.trim, System.currentTimeMillis()))
-                  .toSeq
-              )
-              .getOrElse(Seq.empty)
-          }
-        }
-        .toList
+      val selfPk = client.session.split("[:%]").headOption.getOrElse("")
+      val cookie =
+        s"sessionid=${client.session}; ds_user_id=$selfPk${if (client.crsf != null && client.crsf.nonEmpty) s"; csrftoken=${client.crsf}" else ""}"
 
-      UserFeedMedias(user, medias)
+      val (fbDtsg, lsd) = getWebTokens(user.folderName)
+
+      val dataObj = new android.org.json.JSONObject()
+      dataObj.put("count", 12)
+      dataObj.put("include_relationship_info", true)
+      dataObj.put("latest_besties_reel_media", true)
+      dataObj.put("latest_reel_media", true)
+
+      val variables = new android.org.json.JSONObject()
+      variables.put("after", android.org.json.JSONObject.NULL)
+      variables.put("before", android.org.json.JSONObject.NULL)
+      variables.put("data", dataObj)
+      variables.put("first", 12)
+      variables.put("last", android.org.json.JSONObject.NULL)
+      variables.put("username", user.folderName)
+      variables.put("__relay_internal__pv__PolarisMultiCaptionCarouselEnabledrelayprovider", false)
+      variables.put("__relay_internal__pv__PolarisShortDramaEnabledrelayprovider", false)
+      variables.put("__relay_internal__pv__PolarisSEOIsCrawlerrelayprovider", false)
+      variables.put("__relay_internal__pv__PolarisProductTagIndicatorEnabledrelayprovider", false)
+      variables.put("__relay_internal__pv__PolarisThreadsStyleCommentsEnabledrelayprovider", false)
+      variables.put("__relay_internal__pv__PolarisReelsRecoDebugOverlayEnabledrelayprovider", false)
+
+      val formBody = new okhttp3.FormBody.Builder()
+        .add("av", selfPk)
+        .add("fb_dtsg", fbDtsg)
+        .add("lsd", lsd)
+        .add("fb_api_caller_class", "RelayModern")
+        .add("fb_api_req_friendly_name", "PolarisProfilePostsQuery")
+        .add("variables", variables.toString)
+        .add("doc_id", "30543471925243353")
+        .build()
+
+      val req = new okhttp3.Request.Builder()
+        .url("https://www.instagram.com/api/graphql")
+        .header("authority", "www.instagram.com")
+        .header("accept", "*/*")
+        .header("accept-language", HttpConstants.AcceptLanguage)
+        .header("content-type", "application/x-www-form-urlencoded")
+        .header("origin", "https://www.instagram.com")
+        .header("referer", s"https://www.instagram.com/${user.folderName}/")
+        .header("sec-ch-ua", HttpConstants.SecChUa)
+        .header("sec-ch-ua-mobile", HttpConstants.SecChUaMobile)
+        .header("sec-ch-ua-platform", HttpConstants.SecChUaPlatform)
+        .header("sec-fetch-dest", "empty")
+        .header("sec-fetch-mode", "cors")
+        .header("sec-fetch-site", "same-origin")
+        .header("user-agent", HttpConstants.UserAgent)
+        .header("x-asbd-id", HttpConstants.AsbdId)
+        .header("x-csrftoken", if (client.crsf != null) client.crsf else "")
+        .header("x-fb-friendly-name", "PolarisProfilePostsQuery")
+        .header("x-fb-lsd", lsd)
+        .header("x-ig-app-id", HttpConstants.AppId)
+        .header("cookie", cookie)
+        .post(formBody)
+        .build()
+
+      Using.resource(com.instagram4j.web.Utils.client.newCall(req).execute()) { resp =>
+        if (!resp.isSuccessful) {
+          logger.warn(s"Could not get posts for user @${user.folderName}: HTTP ${resp.code()}")
+          UserFeedMedias(user, List.empty)
+        } else {
+          val body = Option(resp.body()).map(_.string()).getOrElse("")
+          val json = new android.org.json.JSONObject(body)
+          val data = Option(json.optJSONObject("data"))
+          val conn = data.flatMap(d => Option(d.optJSONObject("xdt_api__v1__feed__user_timeline_graphql_connection")))
+          val edges = conn.flatMap(c => Option(c.optJSONArray("edges"))).getOrElse(new android.org.json.JSONArray())
+
+          val items = new android.org.json.JSONArray()
+          for (i <- 0 until edges.length()) {
+            val node = edges.getJSONObject(i).optJSONObject("node")
+            if (node != null) items.put(node)
+          }
+
+          val medias = extractMediaItems(items)
+          logger.info(s"Loaded ${medias.size} feed posts for @${user.folderName}.")
+          UserFeedMedias(user, medias)
+        }
+      }
     } match {
       case Success(userFeeds) => userFeeds
       case Failure(ex) =>

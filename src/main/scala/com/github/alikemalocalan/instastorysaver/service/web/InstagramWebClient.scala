@@ -137,12 +137,31 @@ final class InstagramWebClient(session: InstagramSession, gateway: HttpGateway =
 
       val (status, responseBody) = execute(request)
       if (status < 200 || status >= 300) {
-        logger.warn(s"Could not get posts for user @${user.folderName}: HTTP $status")
+        logger.warn(
+          s"[GRAPHQL-ERROR] ${GraphQlContract.ProfilePosts.operation} HTTP $status for @${user.folderName}"
+        )
         UserFeedMedias(user, List.empty)
       } else {
-        val medias = parseFeedMedias(parseJson(responseBody, "feed response").getOrElse(ujson.Obj()))
-        logger.info(s"Loaded ${medias.size} feed posts for @${user.folderName}.")
-        UserFeedMedias(user, medias)
+        val json = parseJson(responseBody, "feed response").getOrElse(ujson.Obj())
+        val graphErrors =
+          decodeDto[GraphQlErrorResponse](json, s"${GraphQlContract.ProfilePosts.operation} errors")
+            .flatMap(_.errors)
+            .getOrElse(Nil)
+
+        if (graphErrors.nonEmpty) {
+          val first = graphErrors.head
+          val summary = first.summary.map(_.trim).filter(_.nonEmpty).getOrElse("no summary")
+          val message = first.message.map(_.trim).filter(_.nonEmpty).getOrElse("no message")
+          logger.warn(
+            s"[GRAPHQL-ERROR] ${GraphQlContract.ProfilePosts.operation} for @${user.folderName}: " +
+              s"$summary | $message | body=${responseBody.take(500)}"
+          )
+          UserFeedMedias(user, List.empty)
+        } else {
+          val medias = parseFeedMedias(json)
+          logger.info(s"Loaded ${medias.size} feed posts for @${user.folderName}.")
+          UserFeedMedias(user, medias)
+        }
       }
     } match {
       case Success(feed) => feed
@@ -239,7 +258,14 @@ final class InstagramWebClient(session: InstagramSession, gateway: HttpGateway =
       .build()
 
     val (_, html) = execute(request)
-    parseWebTokens(html)
+    val tokens = parseWebTokens(html)
+    if (tokens._1.isEmpty || tokens._2.isEmpty) {
+      logger.warn(
+        s"[GRAPHQL-SHAPE] parseWebTokens: missing fb_dtsg/lsd tokens for @$username; " +
+          "profile page HTML shape may have changed"
+      )
+    }
+    tokens
   }
 
   // ---------------------------------------------------------------------------
@@ -276,7 +302,7 @@ final class InstagramWebClient(session: InstagramSession, gateway: HttpGateway =
       .setHeader("user-agent", HttpConstants.UserAgent)
       .setHeader("x-ig-app-id", HttpConstants.AppId)
 
-  private def profilePostsVariables(user: User): Value = {
+  private[web] def profilePostsVariables(user: User): Value = {
     val data = ujson.Obj(
       "count" -> 12,
       "include_relationship_info" -> true,
@@ -296,7 +322,7 @@ final class InstagramWebClient(session: InstagramSession, gateway: HttpGateway =
       "__relay_internal__pv__PolarisSEOIsCrawlerrelayprovider" -> false,
       "__relay_internal__pv__PolarisProductTagIndicatorEnabledrelayprovider" -> false,
       "__relay_internal__pv__PolarisThreadsStyleCommentsEnabledrelayprovider" -> false,
-      "__relay_internal__pv__PolarisReelsRecroDebugOverlayEnabledrelayprovider" -> false
+      "__relay_internal__pv__PolarisReelsRecoDebugOverlayEnabledrelayprovider" -> false
     )
   }
 }

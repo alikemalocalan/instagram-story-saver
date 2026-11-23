@@ -64,6 +64,24 @@ final class InstagramGraphQlSuite extends FunSuite {
     )
   }
 
+  test("feed request: includes every Relay gate variable required by PolarisProfilePostsQuery") {
+    val client = new InstagramWebClient(InstagramSession("123%3Asession", "csrf"))
+    val variables = client.profilePostsVariables(User("alice", "123"))
+    val gates = variables.obj.keys.toList.filter(_.startsWith("__relay_internal__pv__")).toSet
+
+    assertEquals(
+      gates,
+      Set(
+        "__relay_internal__pv__PolarisMultiCaptionCarouselEnabledrelayprovider",
+        "__relay_internal__pv__PolarisShortDramaEnabledrelayprovider",
+        "__relay_internal__pv__PolarisSEOIsCrawlerrelayprovider",
+        "__relay_internal__pv__PolarisProductTagIndicatorEnabledrelayprovider",
+        "__relay_internal__pv__PolarisThreadsStyleCommentsEnabledrelayprovider",
+        "__relay_internal__pv__PolarisReelsRecoDebugOverlayEnabledrelayprovider"
+      )
+    )
+  }
+
   test("highlights: parses ids and titled medias") {
     assertEquals(parseHighlightIds(fixture("highlights.json")), List("hl-1", "hl-2"))
 

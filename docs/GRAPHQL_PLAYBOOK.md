@@ -19,6 +19,7 @@ Log prefixes are stable:
 | `GraphQL request failed with HTTP 400/401` | Retired doc id, missing cookie/csrf, or changed headers | `GraphQlContract.Stories.docId`, headers in `InstagramWebClient.queryGraphQL` |
 | `summary: "Not Found"` | Reel has no active stories; expected behavior | `resolveGraphQlError` → empty reels response. Do not "fix" this. |
 | Feed shows 0 posts | ProfilePosts doc id / variables / response path changed | `[GRAPHQL-SHAPE] PolarisProfilePostsQuery`, `GraphQlContract.ProfilePosts`, fixture `feed.json` |
+| `[GRAPHQL-ERROR] PolarisProfilePostsQuery` with `missing_required_variable_value` | A Relay gate variable name is misspelled or missing (server sees `topLevelKeys=[errors,extensions]`) | `[GRAPHQL-ERROR]` body in the log; compare the `__relay_internal__pv__*` keys in `profilePostsVariables` with the `PolarisProfilePostsQuery.graphql` module in Instagram's JS bundle |
 | Highlights show 0 | Highlights doc id or `data.highlights.edges` path changed | `GraphQlContract.Highlights`, fixtures `highlights.json` / `highlight_medias.json` |
 | Following is empty or pagination stops | `data.users` / `data.next_max_id` fields changed | `GraphQlContract.Following`, `parseFollowingPage`, fixture `following.json` |
 | Media URLs not found | `video_versions` / `image_versions2` / `display_url` shape changed | `InstagramDtos.MediaItem` / `VideoCandidate` / `ResourceCandidate`, then `bestVideoUrl` / `bestImageUrl` |

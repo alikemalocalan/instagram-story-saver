@@ -103,6 +103,10 @@ object InstagramDtos {
   final case class ReelsMediaItem(items: Option[List[MediaItem]] = None)
   final case class StoriesPageResponse(xdt_api__v1__feed__reels_media: Option[ReelsMediaState] = None)
 
-  final case class GraphQlError(summary: Option[String] = None, message: Option[String] = None)
+  final case class GraphQlError(
+      summary: Option[String] = None,
+      message: Option[String] = None,
+      path: Option[List[StringOrNumber]] = None
+  )
   final case class GraphQlErrorResponse(errors: Option[List[GraphQlError]] = None)
 }

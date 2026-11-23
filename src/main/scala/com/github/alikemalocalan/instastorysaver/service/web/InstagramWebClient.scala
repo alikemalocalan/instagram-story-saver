@@ -156,7 +156,7 @@ final class InstagramWebClient(session: InstagramSession, gateway: HttpGateway =
           // No data at all: the endpoint rejected the whole request (doc id, variables, session).
           logger.warn(
             s"[GRAPHQL-ERROR] ${GraphQlContract.ProfilePosts.operation} for @${user.folderName}: " +
-              s"$summary | $message | body=${responseBody.take(500)}"
+              s"$summary | $message | paths=${errorPaths(graphErrors)} | body=${responseBody.take(500)}"
           )
           UserFeedMedias(user, List.empty)
         } else {
@@ -164,7 +164,8 @@ final class InstagramWebClient(session: InstagramSession, gateway: HttpGateway =
             // Field-level errors (e.g. one missing profile picture) must not discard valid posts.
             logger.warn(
               s"[GRAPHQL-SHAPE] ${GraphQlContract.ProfilePosts.operation} for @${user.folderName}: " +
-                s"${graphErrors.size} field error(s), using available data | $summary | $message"
+                s"${graphErrors.size} field error(s), using available data | $summary | $message | " +
+                s"paths=${errorPaths(graphErrors)}"
             )
           }
           val medias = parseFeedMedias(json)
@@ -355,6 +356,15 @@ object InstagramWebClient {
   /** True when a feed response contains a usable `data` object, even alongside field errors. */
   private[web] def hasFeedData(json: Value): Boolean =
     json.objOpt.flatMap(_.get("data")).exists(_.objOpt.exists(_.nonEmpty))
+
+  /** Renders GraphQL error paths as `a.b.0.c` strings for logs. */
+  private[web] def errorPaths(errors: List[GraphQlError]): String =
+    errors
+      .flatMap(_.path)
+      .map(_.map(_.value).mkString("."))
+      .distinct
+      .take(5)
+      .mkString("; ")
 
   private def jsonArrayOf(values: String*): Value =
     ujson.Arr(values.map(value => ujson.Str(value))*)

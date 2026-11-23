@@ -86,8 +86,9 @@ final class InstagramGraphQlSuite extends FunSuite {
   }
 
   test("feed: field-level errors do not discard otherwise usable posts") {
-    val feed = fixture("feed.json")
-    feed.obj("errors") = ujson.Arr(ujson.Obj("message" -> "field_exception", "code" -> 1357005))
+    import InstagramDecoders.{given, *}
+
+    val feedResponse = fixture("feed_field_error.json")
     val tokensHtml = """["DTSGInitialData",[],{"token":"dt"},258],["LSD",[],{"token":"ls"},323]"""
 
     val gateway = new HttpGateway {
@@ -95,7 +96,7 @@ final class InstagramGraphQlSuite extends FunSuite {
         HttpRequest.newBuilder(URI.create(url))
 
       override def execute(request: HttpRequest): (Int, String) =
-        if (request.uri().toString.contains("/api/graphql")) (200, ujson.write(feed))
+        if (request.uri().toString.contains("/api/graphql")) (200, ujson.write(feedResponse))
         else (200, tokensHtml)
 
       override def openDownloadStream(url: String): InputStream =
@@ -106,6 +107,14 @@ final class InstagramGraphQlSuite extends FunSuite {
 
     val client = new InstagramWebClient(InstagramSession("123%3Asession", "csrf"), gateway)
     assertEquals(client.fetchPosts(User("alice", "123")).medias.size, 3)
+
+    val errors = decodeDto[GraphQlErrorResponse](feedResponse, "feed_field_error.json")
+      .flatMap(_.errors)
+      .getOrElse(Nil)
+    assertEquals(
+      InstagramWebClient.errorPaths(errors),
+      "xdt_api__v1__feed__user_timeline_graphql_connection.edges.0.node.location.profile_pic_url"
+    )
   }
 
   test("highlights: parses ids and titled medias") {

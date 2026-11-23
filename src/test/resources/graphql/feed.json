@@ -1,0 +1,25 @@
+{
+  "data": {
+    "xdt_api__v1__feed__user_timeline_graphql_connection": {
+      "edges": [
+        {
+          "node": {
+            "taken_at": 1700000000,
+            "edge_sidecar_to_children": {
+              "edges": [
+                { "node": { "display_url": "https://cdn.example.com/carousel-1.jpg" } },
+                { "node": { "display_url": "https://cdn.example.com/carousel-2.jpg" } }
+              ]
+            }
+          }
+        },
+        {
+          "node": {
+            "taken_at": 1700000100,
+            "display_url": "https://cdn.example.com/single.jpg"
+          }
+        }
+      ]
+    }
+  }
+}

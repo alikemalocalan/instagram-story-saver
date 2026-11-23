@@ -25,7 +25,7 @@ RUN native-image \
     --enable-https \
     --enable-http \
     --install-exit-handlers \
-    --initialize-at-build-time=org.slf4j,com.typesafe.config,android.org.json,okio \
+    --initialize-at-build-time=org.slf4j,com.typesafe.config,io.circe \
     -jar app.jar \
     -o instastorysaver-bin
 

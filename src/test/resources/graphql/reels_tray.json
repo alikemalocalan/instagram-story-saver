@@ -1,0 +1,9 @@
+{
+  "tray": [
+    {
+      "id": 123,
+      "user": { "pk": 123, "username": "alice" },
+      "media_ids": [10, 11]
+    }
+  ]
+}

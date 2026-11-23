@@ -3,38 +3,30 @@
 // ==============================================================================
 
 ThisBuild / organization := "com.github.alikemalocalan"
-ThisBuild / scalaVersion := "3.3.8"
+ThisBuild / scalaVersion := "3.9.0"
 ThisBuild / version := "1.0.0"
-ThisBuild / resolvers += "jitpack" at "https://jitpack.io"
 
-val jsonAndroidVersion = "1.0"
-val okhttpVersion = "5.5.0"
-val okioVersion = "3.18.2"
-val kotlinVersion = "2.4.20"
-val configVersion = "1.4.9"
+val circeVersion = "0.14.17"
+val configVersion = "1.4.10"
 val mainargsVersion = "0.7.8"
 val slf4jVersion = "2.0.20"
+val munitVersion = "1.3.6"
 
 lazy val root = project
   .in(file("."))
   .enablePlugins(JavaAppPackaging, GraalVMNativeImagePlugin)
   .settings(
     name := "instastorysaver",
-    resolvers += "jitpack" at "https://jitpack.io",
     libraryDependencies ++= Seq(
-      "com.github.ErrorxCode" % "json-android" % jsonAndroidVersion,
-      "com.squareup.okhttp3" % "okhttp-jvm" % okhttpVersion,
-      "com.squareup.okio" % "okio" % okioVersion,
-      "org.jetbrains.kotlin" % "kotlin-stdlib" % kotlinVersion,
+      "io.circe" %% "circe-core" % circeVersion,
+      "io.circe" %% "circe-parser" % circeVersion,
       "com.typesafe" % "config" % configVersion,
       "com.lihaoyi" %% "mainargs" % mainargsVersion,
-      "org.slf4j" % "slf4j-simple" % slf4jVersion
+      "org.slf4j" % "slf4j-simple" % slf4jVersion,
+      "org.scalameta" %% "munit" % munitVersion % Test
     ),
-    dependencyOverrides ++= Seq(
-      "com.squareup.okio" % "okio" % okioVersion,
-      "com.squareup.okio" % "okio-jvm" % okioVersion,
-      "org.jetbrains.kotlin" % "kotlin-stdlib" % kotlinVersion
-    ),
+    // sbt 2's `test` behaves like testQuick; always run the full fixture suite.
+    Test / test := (Test / testOnly).toTask(" *").value,
     scalacOptions ++= Seq(
       "-source:3.3",
       "-encoding",
@@ -62,7 +54,7 @@ lazy val root = project
         "--enable-https",
         "--enable-http",
         "--install-exit-handlers",
-        "--initialize-at-build-time=org.slf4j,com.typesafe.config,android.org.json,okio"
+        "--initialize-at-build-time=org.slf4j,com.typesafe.config,io.circe"
       )
       if (isMac) {
         baseOptions ++ Seq(
@@ -90,10 +82,7 @@ lazy val root = project
       case PathList("META-INF", "MANIFEST.MF" | "INDEX.LIST" | "DEPENDENCIES" | "NOTICE" | "NOTICE.txt" | "LICENSE" | "LICENSE.txt") => MergeStrategy.discard
       case PathList("META-INF", p @ _*) if p.exists(_.toLowerCase.contains("notice")) || p.exists(_.toLowerCase.contains("license")) => MergeStrategy.discard
       case PathList("module-info.class")                                                       => MergeStrategy.discard
-      case PathList("okhttp3", _*)                                                             => MergeStrategy.first
       case path if path.endsWith(".SF") || path.endsWith(".DSA") || path.endsWith(".RSA")      => MergeStrategy.discard
-      case path if path.endsWith(".kotlin_module") || path.endsWith(".kotlin_metadata")        => MergeStrategy.discard
-      case path if path.endsWith(".kotlin_builtins")                                           => MergeStrategy.first
       case path if path.endsWith(".md") || path.endsWith(".markdown") || path.endsWith(".txt") => MergeStrategy.discard
       case path if path.toLowerCase.contains("license") || path.toLowerCase.contains("notice") => MergeStrategy.discard
       case other => MergeStrategy.defaultMergeStrategy(other)

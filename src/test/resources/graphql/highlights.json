@@ -1,0 +1,10 @@
+{
+  "data": {
+    "highlights": {
+      "edges": [
+        { "node": { "id": "hl-1" } },
+        { "node": { "id": "hl-2" } }
+      ]
+    }
+  }
+}

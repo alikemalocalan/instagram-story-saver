@@ -1,10 +1,12 @@
 package com.github.alikemalocalan.instastorysaver.service
 
 import com.github.alikemalocalan.instastorysaver.model.UrlOperation
-import okhttp3.*
 import org.slf4j.{Logger, LoggerFactory}
 
+import java.net.URI
+import java.net.http.{HttpClient, HttpRequest, HttpResponse}
 import java.nio.file.*
+import java.time.Duration
 import java.util.concurrent.{Executors, TimeUnit}
 import scala.annotation.tailrec
 import scala.concurrent.duration.*
@@ -14,71 +16,74 @@ import scala.util.*
 object FileService {
   private val logger: Logger = LoggerFactory.getLogger(getClass)
 
-  private val connectionPool = new ConnectionPool(8, 30, TimeUnit.SECONDS)
+  private val httpClient: HttpClient =
+    HttpClient
+      .newBuilder()
+      .connectTimeout(Duration.ofSeconds(15))
+      .followRedirects(HttpClient.Redirect.ALWAYS)
+      .build()
 
-  private val httpClient: OkHttpClient = new OkHttpClient.Builder()
-    .connectionPool(connectionPool)
-    .connectTimeout(15, TimeUnit.SECONDS)
-    .readTimeout(30, TimeUnit.SECONDS)
-    .writeTimeout(30, TimeUnit.SECONDS)
-    .retryOnConnectionFailure(true)
-    .followRedirects(true)
-    .addInterceptor((chain: Interceptor.Chain) => {
-      val req = chain.request().newBuilder()
-        .header("user-agent", HttpConstants.UserAgent)
-        .header("accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
-        .header("accept-language", HttpConstants.AcceptLanguage)
-        .header("sec-ch-ua", HttpConstants.SecChUa)
-        .header("sec-ch-ua-mobile", HttpConstants.SecChUaMobile)
-        .header("sec-ch-ua-platform", HttpConstants.SecChUaPlatform)
-        .header("sec-fetch-dest", "image")
-        .header("sec-fetch-mode", "no-cors")
-        .header("sec-fetch-site", "cross-site")
-        .build()
-      chain.proceed(req)
-    })
-    .build()
+  private val MediaHeaders: Seq[(String, String)] = Seq(
+    "user-agent" -> HttpConstants.UserAgent,
+    "accept" -> "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+    "accept-language" -> HttpConstants.AcceptLanguage,
+    "sec-ch-ua" -> HttpConstants.SecChUa,
+    "sec-ch-ua-mobile" -> HttpConstants.SecChUaMobile,
+    "sec-ch-ua-platform" -> HttpConstants.SecChUaPlatform,
+    "sec-fetch-dest" -> "image",
+    "sec-fetch-mode" -> "no-cors",
+    "sec-fetch-site" -> "cross-site"
+  )
 
-  /** Streams HTTP response directly to target path using a temporary .part file and atomic move.
-    */
+  /** Streams HTTP response directly to target path using a temporary .part file and atomic move. */
   private def streamToFile(url: String, destinationPath: Path): Try[Path] = {
     Try {
-      val parsedUrl = Option(HttpUrl.parse(url.trim)).getOrElse {
+      val trimmed = url.trim
+      val uri = URI.create(trimmed)
+      if (uri.getHost == null || (uri.getScheme != "https" && uri.getScheme != "http")) {
         throw new IllegalArgumentException(s"Invalid or malformed HTTP URL: '$url'")
       }
 
       val partPath = destinationPath.resolveSibling(s"${destinationPath.getFileName}.part")
-      val request = new Request.Builder().url(parsedUrl).build()
+      val builder = HttpRequest
+        .newBuilder(uri)
+        .timeout(Duration.ofMinutes(5))
+        .GET()
+      MediaHeaders.foreach { case (key, value) => builder.setHeader(key, value) }
 
       Option(destinationPath.getParent).foreach(Files.createDirectories(_))
 
-      Using.resource(httpClient.newCall(request).execute()) { response =>
-        if (!response.isSuccessful) {
-          throw new RuntimeException(s"HTTP ${response.code()} downloading $url")
+      val response =
+        try httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream())
+        catch {
+          case ex: InterruptedException =>
+            Thread.currentThread().interrupt()
+            throw new java.io.IOException("Media download interrupted", ex)
         }
 
-        val body = Option(response.body()).getOrElse {
-          throw new RuntimeException(s"Empty response body received from $url")
+      if (response.statusCode() < 200 || response.statusCode() >= 300) {
+        try response.body().close()
+        catch { case _: Throwable => () }
+        throw new RuntimeException(s"HTTP ${response.statusCode()} downloading $url")
+      }
+
+      try {
+        Using.resources(
+          response.body(),
+          Files.newOutputStream(
+            partPath,
+            StandardOpenOption.CREATE,
+            StandardOpenOption.WRITE,
+            StandardOpenOption.TRUNCATE_EXISTING
+          )
+        ) { (in, out) =>
+          in.transferTo(out)
         }
 
-        try {
-          Using.resources(
-            body.byteStream(),
-            Files.newOutputStream(
-              partPath,
-              StandardOpenOption.CREATE,
-              StandardOpenOption.WRITE,
-              StandardOpenOption.TRUNCATE_EXISTING
-            )
-          ) { (in, out) =>
-            in.transferTo(out)
-          }
-
-          moveAtomically(partPath, destinationPath)
-          destinationPath
-        } finally {
-          Files.deleteIfExists(partPath)
-        }
+        moveAtomically(partPath, destinationPath)
+        destinationPath
+      } finally {
+        Files.deleteIfExists(partPath)
       }
     }
   }
@@ -171,11 +176,7 @@ object FileService {
   }
 
   def shutdown(): Unit = {
-    try {
-      httpClient.dispatcher().executorService().shutdown()
-      connectionPool.evictAll()
-    } catch {
-      case _: Throwable => ()
-    }
+    try httpClient.close()
+    catch { case _: Throwable => () }
   }
 }

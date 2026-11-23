@@ -1,0 +1,9 @@
+{
+  "data": {
+    "users": [
+      { "pk": "1", "username": "alice" },
+      { "pk": "2", "username": "bob" }
+    ],
+    "next_max_id": "cursor-123"
+  }
+}

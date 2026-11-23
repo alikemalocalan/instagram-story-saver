@@ -1,0 +1,16 @@
+{
+  "data": {
+    "xdt_api__v1__feed__reels_media__connection": {
+      "edges": [
+        {
+          "node": {
+            "title": "Trip",
+            "items": [
+              { "taken_at": 1700000000, "display_url": "https://cdn.example.com/highlight.jpg" }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

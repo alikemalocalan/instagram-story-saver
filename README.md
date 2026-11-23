@@ -6,7 +6,8 @@ A lightweight, high-performance background utility to download and archive activ
 
 ## 🚀 Features
 
-- **Scala 3.3 & Java 21:** Modern, functional codebase using pure Java NIO streaming.
+- **Scala 3.9 & Java 21+:** Modern, functional codebase using pure Java NIO streaming and the JDK HTTP client.
+- **Circe JSON:** Typed, pure Scala JSON parsing instead of Android's `org.json`.
 - **GraalVM Native Image:** Pre-compiled standalone binaries for **macOS ARM64 (Apple Silicon)** & **Linux ARM64 (ARMv8-A)** with zero external dependencies (no JRE required).
 
 ---
@@ -69,10 +70,31 @@ chmod +x instastorysaver-linux-arm64/instastorysaver instastorysaver-linux-arm64
 
 | Argument | Default | Description |
 | :--- | :--- | :--- |
+| `--username` | — | Instagram username (required). |
+| `--session-id` | — | `sessionid` cookie value from a browser session (required). |
+| `--csrf-token` | — | `csrftoken` cookie value from a browser session (required). |
+| `--destination-folder` | `~/instagram-stories` | Destination folder for downloaded media. |
 | `--check-interval-days` | `7` | Days before re-checking feeds or highlights for a user in `following.csv`. |
 | `--concurrency` | `3` | Maximum concurrent media file downloads. |
 | `--include-feeds` | `false` | Also download feed posts of followed users. |
 | `--include-highlights` | `false` | Also download story highlights of followed users. |
+
+---
+
+## 🧱 Build From Source
+
+```bash
+sbt "clean; compile; test; assembly"
+# Fat JAR: target/out/jvm/scala-3.9.0/instastorysaver/instastorysaver.jar
+```
+
+Toolchain: Scala `3.9.0`, sbt `2.0.12`, Java `21+`.
+
+Migration details (OkHttp → Java HTTP, json-android → Circe, native-image ayarları):
+[docs/MIGRATIONS.md](docs/MIGRATIONS.md)
+
+Instagram GraphQL değişikliklerinde AI agent’lar için müdahale rehberi:
+[docs/GRAPHQL_PLAYBOOK.md](docs/GRAPHQL_PLAYBOOK.md) · [AGENTS.md](AGENTS.md)
 
 ---
 

@@ -1,0 +1,24 @@
+{
+  "data": {
+    "xdt_viewer": { "user": { "pk": "999" } },
+    "xdt_api__v1__feed__reels_media__connection": {
+      "edges": [
+        {
+          "node": {
+            "id": "123",
+            "user": { "pk": "123", "username": "alice" },
+            "items": [
+              {
+                "taken_at": 1700000000,
+                "video_versions": [
+                  { "width": 640, "height": 360, "bandwidth_bps": 100, "url": "https://cdn.example.com/low.mp4" },
+                  { "width": 1080, "height": 1920, "bandwidth_bps": 900, "url": "https://cdn.example.com/high.mp4" }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

@@ -16,4 +16,14 @@ object HttpConstants {
   // Standard Instagram Web identifiers
   val AsbdId: String = "129477"
   val AppId: String = "936619743392459"
+
+  val DefaultHeaders: Seq[(String, String)] = Seq(
+    "user-agent" -> UserAgent,
+    "sec-ch-ua" -> SecChUa,
+    "sec-ch-ua-mobile" -> SecChUaMobile,
+    "sec-ch-ua-platform" -> SecChUaPlatform,
+    "accept-language" -> AcceptLanguage,
+    "x-ig-app-id" -> AppId,
+    "x-asbd-id" -> AsbdId
+  )
 }

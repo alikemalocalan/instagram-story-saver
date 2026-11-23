@@ -1,7 +1,7 @@
 package com.github.alikemalocalan.instastorysaver
 
 import com.github.alikemalocalan.instastorysaver.service.{FileService, InstaService}
-import com.github.alikemalocalan.instastorysaver.service.web.InstagramSession
+import com.github.alikemalocalan.instastorysaver.service.web.{InstagramHttpClient, InstagramSession}
 import mainargs.{ParserForMethods, arg, main}
 import org.slf4j.{Logger, LoggerFactory}
 
@@ -76,6 +76,7 @@ object StorySaverCLI {
       }
     } finally {
       FileService.shutdown()
+      InstagramHttpClient.close()
     }
   }
 
